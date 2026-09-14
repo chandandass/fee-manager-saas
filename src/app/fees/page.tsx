@@ -8,12 +8,14 @@ import {
   Badge,
   EmptyState,
   IconButton,
+  Modal,
+  Input,
 } from "@/presentation/components/ui";
 import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageFees } from "@/domain/use-cases/ManageFees";
 import { FeeRecord, Student } from "@/domain/entities/Student";
-import { MessageCircle, Phone, Check } from "lucide-react";
+import { MessageCircle, Phone, Pencil } from "lucide-react";
 import { whatsappService } from "@/infrastructure/whatsapp/WhatsAppService";
 
 const repos = createRepositories();
@@ -24,6 +26,8 @@ export default function FeesPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [filter, setFilter] = useState<"all" | "pending" | "paid">("pending");
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<FeeRecord | null>(null);
+  const [payAmount, setPayAmount] = useState("");
 
   async function load() {
     const [all, studs] = await Promise.all([
@@ -48,15 +52,61 @@ export default function FeesPage() {
       return true;
     })
     .sort((a, b) => {
-      // pending first, then by days overdue desc
       if (a.status === "paid" && b.status !== "paid") return 1;
       if (a.status !== "paid" && b.status === "paid") return -1;
       return getDaysPending(b.month) - getDaysPending(a.month);
     });
 
-  async function markPaid(id: string, amount: number) {
-    await manageFees.markAsPaid(id, amount);
+  function openPayment(fee: FeeRecord) {
+    setEditing(fee);
+    // Pre-fill with remaining due (or full amount if already paid, for edit)
+    const remaining = fee.amount - fee.paidAmount;
+    setPayAmount(String(remaining > 0 ? remaining : fee.amount));
+  }
+
+  async function savePayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    const entered = Number(payAmount);
+    if (isNaN(entered) || entered < 0) return;
+
+    // User enters "amount received now" OR we treat as total paid?
+    // UX: field = "Total paid so far" is clearer for corrections.
+    // But teachers think "I received X today".
+    // Simple approach: field labeled "Amount paid (total for this month)"
+    // Pre-filled with remaining for new, or current paid for edit.
+    // Actually better: "How much has been paid in total for this month?"
+    const totalPaid =
+      editing.paidAmount > 0 && editing.status === "paid"
+        ? entered
+        : editing.paidAmount + entered;
+
+    // If opening from pending with remaining pre-filled, entered = remaining means full pay.
+    // If they change to smaller number, it's partial of the remaining → total = paidAmount + entered.
+    // If editing already paid, pre-fill full amount, they can lower it.
+
+    let newTotal: number;
+    if (editing.status === "paid" || editing.paidAmount === 0) {
+      // Fresh or full edit: treat input as total paid
+      newTotal = Math.min(editing.amount, entered);
+    } else {
+      // Partial already: pre-filled remaining; input is "extra received now"
+      // Simpler unified UX: always treat field as TOTAL paid for the month
+      newTotal = Math.min(editing.amount, entered);
+    }
+
+    // Unified: always "Total amount paid for this month"
+    newTotal = Math.min(editing.amount, Math.max(0, entered));
+
+    await manageFees.recordPayment(editing.id, newTotal);
+    setEditing(null);
+    setPayAmount("");
     load();
+  }
+
+  function openEdit(fee: FeeRecord) {
+    setEditing(fee);
+    setPayAmount(String(fee.paidAmount));
   }
 
   const statusVariant = (s: FeeRecord["status"]) =>
@@ -66,7 +116,6 @@ export default function FeesPage() {
     return (
       <div className="p-4 animate-pulse space-y-3">
         <div className="h-8 bg-slate-200 rounded w-32" />
-        <div className="h-24 bg-slate-200 rounded-2xl" />
         <div className="h-24 bg-slate-200 rounded-2xl" />
       </div>
     );
@@ -83,12 +132,11 @@ export default function FeesPage() {
         title="Fees"
         subtitle={
           pendingCount > 0
-            ? `${pendingCount} pending · ${formatCurrency(pendingAmount)}`
+            ? pendingCount + " pending · " + formatCurrency(pendingAmount)
             : "All clear this month"
         }
       />
 
-      {/* Filter chips */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {(
           [
@@ -107,10 +155,70 @@ export default function FeesPage() {
             }
           >
             {label}
-            {key === "pending" && pendingCount > 0 ? ` (${pendingCount})` : ""}
+            {key === "pending" && pendingCount > 0 ? " (" + pendingCount + ")" : ""}
           </button>
         ))}
       </div>
+
+      {/* Payment modal */}
+      <Modal
+        open={!!editing}
+        onClose={() => {
+          setEditing(null);
+          setPayAmount("");
+        }}
+        title={editing?.status === "paid" ? "Edit payment" : "Record payment"}
+      >
+        {editing && (
+          <form onSubmit={savePayment} className="space-y-4">
+            <div className="bg-slate-50 rounded-xl p-3 text-sm">
+              <p className="font-medium text-slate-900">{editing.studentName}</p>
+              <p className="text-slate-500 mt-0.5">
+                Monthly fee: {formatCurrency(editing.amount)}
+              </p>
+              {editing.paidAmount > 0 && (
+                <p className="text-slate-500">
+                  Already paid: {formatCurrency(editing.paidAmount)}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Total paid for this month (₹)
+              </label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={editing.amount}
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                placeholder="0"
+                autoFocus
+              />
+              <p className="text-xs text-slate-500 mt-1.5">
+                Enter full amount for complete payment, or less for partial.
+                Set 0 if marked by mistake.
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-1"
+                onClick={() => setPayAmount(String(editing.amount))}
+              >
+                Full {formatCurrency(editing.amount)}
+              </Button>
+              <Button type="submit" className="flex-1">
+                Save
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -153,55 +261,60 @@ export default function FeesPage() {
                   </Badge>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between">
+                <div className="mt-3 flex items-center justify-between gap-2">
                   <div>
                     <p className="text-lg font-semibold text-slate-900">
                       {formatCurrency(due > 0 ? due : fee.amount)}
                     </p>
                     {fee.paidAmount > 0 && fee.status !== "paid" && (
                       <p className="text-xs text-slate-500">
-                        of {formatCurrency(fee.amount)} · paid {formatCurrency(fee.paidAmount)}
+                        of {formatCurrency(fee.amount)} · paid{" "}
+                        {formatCurrency(fee.paidAmount)}
                       </p>
+                    )}
+                    {fee.status === "paid" && (
+                      <p className="text-xs text-slate-500">Fully paid</p>
                     )}
                   </div>
 
-                  {fee.status !== "paid" && (
-                    <div className="flex items-center gap-2">
-                      {phone && (
-                        <>
-                          <IconButton
-                            href={`tel:+91${phone.replace(/\D/g, "").slice(-10)}`}
-                            variant="call"
-                            title="Call"
-                          >
-                            <Phone size={18} />
-                          </IconButton>
-                          <IconButton
-                            onClick={() =>
-                              whatsappService.openReminder({
-                                phone,
-                                studentName: fee.studentName,
-                                amount: due,
-                                month: fee.month,
-                                instituteName: "Sharma Tuition Centre",
-                              })
-                            }
-                            variant="whatsapp"
-                            title="WhatsApp reminder"
-                          >
-                            <MessageCircle size={18} />
-                          </IconButton>
-                        </>
-                      )}
-                      <Button
-                        size="sm"
-                        onClick={() => markPaid(fee.id, fee.amount)}
-                      >
-                        <Check size={15} />
-                        Paid
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {fee.status !== "paid" && phone && (
+                      <>
+                        <IconButton
+                          href={"tel:+91" + phone.replace(/\D/g, "").slice(-10)}
+                          variant="call"
+                          title="Call"
+                        >
+                          <Phone size={18} />
+                        </IconButton>
+                        <IconButton
+                          onClick={() =>
+                            whatsappService.openReminder({
+                              phone,
+                              studentName: fee.studentName,
+                              amount: due,
+                              month: fee.month,
+                              instituteName: "Sharma Tuition Centre",
+                            })
+                          }
+                          variant="whatsapp"
+                          title="WhatsApp reminder"
+                        >
+                          <MessageCircle size={18} />
+                        </IconButton>
+                      </>
+                    )}
+                    {fee.status === "paid" ? (
+                      <Button size="sm" variant="secondary" onClick={() => openEdit(fee)}>
+                        <Pencil size={14} />
+                        Edit
                       </Button>
-                    </div>
-                  )}
+                    ) : (
+                      <Button size="sm" onClick={() => openPayment(fee)}>
+                        Record
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </Card>
             );

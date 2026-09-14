@@ -12,9 +12,14 @@ export class ManageFees {
     return this.feeRepo.getPending();
   }
 
-  async markAsPaid(id: string, paidAmount: number): Promise<FeeRecord> {
-    if (paidAmount <= 0) throw new Error("Paid amount must be positive");
-    return this.feeRepo.markPaid(id, paidAmount, new Date().toISOString());
+  /**
+   * Record total amount paid so far for this fee.
+   * e.g. fee 2000, already 500, user pays 500 more → pass 1000.
+   * Or correct a mistake: pass 0 to mark fully unpaid.
+   */
+  async recordPayment(id: string, totalPaidAmount: number): Promise<FeeRecord> {
+    if (totalPaidAmount < 0) throw new Error("Amount cannot be negative");
+    return this.feeRepo.markPaid(id, totalPaidAmount, new Date().toISOString());
   }
 
   async generateMonthly(month: string): Promise<FeeRecord[]> {

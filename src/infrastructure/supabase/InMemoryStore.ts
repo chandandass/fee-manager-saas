@@ -12,9 +12,6 @@ import { IFeeRepository } from "@/domain/repositories/IFeeRepository";
 import { IAttendanceRepository } from "@/domain/repositories/IAttendanceRepository";
 import { IInstituteRepository } from "@/domain/repositories/IInstituteRepository";
 
-// In-memory store for V1 demo. Swap with real Supabase implementations later.
-// This is the composition root for Dependency Injection.
-
 let students: Student[] = [
   { id: "s1", name: "Rahul Sharma", phone: "9876543210", parentPhone: "9876543211", batchId: "b1", monthlyFee: 1500, joinedAt: "2025-06-01", isActive: true },
   { id: "s2", name: "Priya Patel", phone: "9123456780", batchId: "b1", monthlyFee: 1500, joinedAt: "2025-07-15", isActive: true },
@@ -106,12 +103,15 @@ export class InMemoryFeeRepository implements IFeeRepository {
     const idx = fees.findIndex((f) => f.id === id);
     if (idx === -1) throw new Error("Fee not found");
     const fee = fees[idx];
-    const newPaid = Math.min(fee.amount, paidAmount);
+    const newPaid = Math.max(0, Math.min(fee.amount, paidAmount));
+    let status: FeeRecord["status"] = "pending";
+    if (newPaid >= fee.amount) status = "paid";
+    else if (newPaid > 0) status = "partial";
     fees[idx] = {
       ...fee,
       paidAmount: newPaid,
-      status: newPaid >= fee.amount ? "paid" : "partial",
-      paidAt: paidAt || new Date().toISOString(),
+      status,
+      paidAt: newPaid > 0 ? (paidAt || new Date().toISOString()) : undefined,
     };
     return fees[idx];
   }

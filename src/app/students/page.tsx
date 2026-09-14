@@ -5,7 +5,6 @@ import {
   PageHeader,
   Card,
   Button,
-  Badge,
   Input,
   Select,
   EmptyState,
@@ -55,6 +54,15 @@ export default function StudentsPage() {
       s.phone.includes(search)
   );
 
+  function onBatchChange(batchId: string) {
+    const batch = batches.find((b) => b.id === batchId);
+    setForm((prev) => ({
+      ...prev,
+      batchId,
+      monthlyFee: batch ? String(batch.monthlyFeeDefault) : prev.monthlyFee,
+    }));
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name || !form.phone || !form.batchId) return;
@@ -81,7 +89,6 @@ export default function StudentsPage() {
       <div className="p-4 animate-pulse space-y-3">
         <div className="h-8 bg-slate-200 rounded w-40" />
         <div className="h-20 bg-slate-200 rounded-2xl" />
-        <div className="h-20 bg-slate-200 rounded-2xl" />
       </div>
     );
   }
@@ -90,7 +97,7 @@ export default function StudentsPage() {
     <div className="p-4 space-y-4">
       <PageHeader
         title="Students"
-        subtitle={`${students.length} total`}
+        subtitle={students.length + " total"}
         action={
           <Button size="sm" onClick={() => setShowForm(true)}>
             <Plus size={16} />
@@ -135,22 +142,27 @@ export default function StudentsPage() {
           />
           <Select
             value={form.batchId}
-            onChange={(e) => setForm({ ...form, batchId: e.target.value })}
+            onChange={(e) => onBatchChange(e.target.value)}
             required
           >
             <option value="">Select batch *</option>
             {batches.map((b) => (
               <option key={b.id} value={b.id}>
-                {b.name}
+                {b.name} ({formatCurrency(b.monthlyFeeDefault)}/mo)
               </option>
             ))}
           </Select>
-          <Input
-            type="number"
-            placeholder="Monthly fee (₹)"
-            value={form.monthlyFee}
-            onChange={(e) => setForm({ ...form, monthlyFee: e.target.value })}
-          />
+          <div>
+            <Input
+              type="number"
+              placeholder="Monthly fee (₹)"
+              value={form.monthlyFee}
+              onChange={(e) => setForm({ ...form, monthlyFee: e.target.value })}
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Auto-filled from batch. Change if this student pays differently.
+            </p>
+          </div>
           <Button type="submit" className="w-full" size="lg">
             Save Student
           </Button>
@@ -185,14 +197,17 @@ export default function StudentsPage() {
                   </p>
                   <div className="flex gap-1.5">
                     <IconButton
-                      href={`tel:+91${s.phone.replace(/\D/g, "").slice(-10)}`}
+                      href={"tel:+91" + s.phone.replace(/\D/g, "").slice(-10)}
                       variant="call"
                       title="Call"
                     >
                       <Phone size={16} />
                     </IconButton>
                     <IconButton
-                      href={`https://wa.me/91${s.phone.replace(/\D/g, "").slice(-10)}`}
+                      href={
+                        "https://wa.me/91" +
+                        s.phone.replace(/\D/g, "").slice(-10)
+                      }
                       variant="whatsapp"
                       title="WhatsApp"
                     >
