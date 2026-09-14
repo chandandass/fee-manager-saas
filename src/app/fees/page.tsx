@@ -7,6 +7,7 @@ import {
   Button,
   Badge,
   EmptyState,
+  IconButton,
   Modal,
   Input,
 } from "@/presentation/components/ui";
@@ -291,10 +292,9 @@ export default function FeesPage() {
                       : "")
                   }
                 >
-                  {/* Row 1: name + status */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-[15px] text-slate-900 truncate">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm truncate">
                         {fee.studentName}
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5">
@@ -306,7 +306,7 @@ export default function FeesPage() {
                         )}
                         {snoozed && fee.snoozedUntil && (
                           <span className="text-amber-600 font-medium">
-                            {" · "}till{" "}
+                            {" · "}snoozed till{" "}
                             {new Date(fee.snoozedUntil).toLocaleDateString(
                               "en-IN",
                               { day: "numeric", month: "short" }
@@ -324,134 +324,126 @@ export default function FeesPage() {
                     </Badge>
                   </div>
 
-                  {/* Row 2: amount */}
-                  <div className="mt-3">
-                    <p className="text-xl font-semibold text-slate-900 tracking-tight">
-                      {formatCurrency(due > 0 ? due : fee.amount)}
-                    </p>
-                    {fee.paidAmount > 0 && fee.status !== "paid" && (
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        of {formatCurrency(fee.amount)} · paid{" "}
-                        {formatCurrency(fee.paidAmount)}
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {formatCurrency(due > 0 ? due : fee.amount)}
                       </p>
-                    )}
-                    {fee.status === "paid" && (
-                      <p className="text-xs text-slate-500 mt-0.5">Fully paid</p>
-                    )}
-                  </div>
+                      {fee.paidAmount > 0 && fee.status !== "paid" && (
+                        <p className="text-xs text-slate-500">
+                          of {formatCurrency(fee.amount)} · paid{" "}
+                          {formatCurrency(fee.paidAmount)}
+                        </p>
+                      )}
+                      {fee.status === "paid" && (
+                        <p className="text-xs text-slate-500">Fully paid</p>
+                      )}
+                    </div>
 
-                  {/* Row 3: actions — clean single row */}
-                  {fee.status === "paid" ? (
-                    <div className="mt-4 pt-3 border-t border-slate-100">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => openEdit(fee)}
-                        className="w-full"
-                      >
-                        <Pencil size={14} />
-                        Edit payment
-                      </Button>
-                    </div>
-                  ) : snoozed ? (
-                    <div className="mt-4 pt-3 border-t border-slate-100">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => unsnooze(fee)}
-                        className="w-full"
-                      >
-                        Bring back to attention
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="mt-4 pt-3 border-t border-slate-100 space-y-2.5">
-                      {/* Primary: Paid + partial */}
-                      <div className="flex gap-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {fee.status !== "paid" && phone && !snoozed && (
+                        <>
+                          <IconButton
+                            href={
+                              "tel:+91" + phone.replace(/\D/g, "").slice(-10)
+                            }
+                            variant="call"
+                            title="Call"
+                          >
+                            <Phone size={18} />
+                          </IconButton>
+                          <IconButton
+                            onClick={() =>
+                              whatsappService.openReminder({
+                                phone,
+                                studentName: fee.studentName,
+                                amount: due,
+                                month: fee.month,
+                                instituteName: "Sharma Tuition Centre",
+                              })
+                            }
+                            variant="whatsapp"
+                            title="WhatsApp reminder"
+                          >
+                            <MessageCircle size={18} />
+                          </IconButton>
+                        </>
+                      )}
+
+                      {fee.status === "paid" ? (
                         <Button
                           size="sm"
-                          onClick={() => markFullPaid(fee)}
-                          className="flex-1"
+                          variant="secondary"
+                          onClick={() => openEdit(fee)}
                         >
-                          <Check size={15} />
-                          Mark paid
+                          <Pencil size={14} />
+                          Edit
                         </Button>
+                      ) : snoozed ? (
                         <Button
                           size="sm"
-                          variant={showPartial ? "primary" : "secondary"}
-                          onClick={() => togglePartial(fee)}
-                          className="px-3"
+                          variant="secondary"
+                          onClick={() => unsnooze(fee)}
                         >
-                          {showPartial ? (
-                            <ChevronUp size={16} />
-                          ) : (
-                            <ChevronDown size={16} />
-                          )}
-                          Partial
+                          Bring back
                         </Button>
-                      </div>
-
-                      {/* Secondary: contact + snooze — quieter */}
-                      <div className="flex items-center justify-between">
+                      ) : (
                         <div className="flex items-center gap-1">
-                          {phone && (
-                            <>
-                              <a
-                                href={
-                                  "tel:+91" +
-                                  phone.replace(/\D/g, "").slice(-10)
-                                }
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100"
-                              >
-                                <Phone size={14} />
-                                Call
-                              </a>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  whatsappService.openReminder({
-                                    phone,
-                                    studentName: fee.studentName,
-                                    amount: due,
-                                    month: fee.month,
-                                    instituteName: "Sharma Tuition Centre",
-                                  })
-                                }
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-green-700 hover:bg-green-50"
-                              >
-                                <MessageCircle size={14} />
-                                WhatsApp
-                              </button>
-                            </>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPartialFeeId(null);
+                              setSnoozeMenuId(showSnooze ? null : fee.id);
+                            }}
+                            className={
+                              "w-9 h-9 rounded-xl flex items-center justify-center transition " +
+                              (showSnooze
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-slate-100 text-slate-500 hover:bg-slate-200")
+                            }
+                            title="Snooze / later"
+                          >
+                            <Clock size={16} />
+                          </button>
+                          <div className="flex">
+                            <Button
+                              size="sm"
+                              onClick={() => markFullPaid(fee)}
+                              className="rounded-r-none"
+                            >
+                              <Check size={15} />
+                              Paid
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => togglePartial(fee)}
+                              className={
+                                "px-2.5 rounded-r-xl flex items-center border-l border-blue-500 " +
+                                (showPartial
+                                  ? "bg-blue-700 text-white"
+                                  : "bg-blue-600 text-white hover:bg-blue-700")
+                              }
+                              title="Partial payment"
+                            >
+                              {showPartial ? (
+                                <ChevronUp size={16} />
+                              ) : (
+                                <ChevronDown size={16} />
+                              )}
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPartialFeeId(null);
-                            setSnoozeMenuId(showSnooze ? null : fee.id);
-                          }}
-                          className={
-                            "inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium " +
-                            (showSnooze
-                              ? "bg-amber-100 text-amber-800"
-                              : "text-slate-500 hover:bg-slate-100")
-                          }
-                        >
-                          <Clock size={14} />
-                          Later
-                        </button>
-                      </div>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </Card>
 
                 {showSnooze && (
                   <div className="bg-amber-50 border border-t-0 border-amber-100 rounded-b-2xl px-4 py-3">
                     <p className="text-xs text-slate-600 mb-2">
-                      Hide for a while — comes back automatically
+                      Hide from “Needs attention” for a while
                     </p>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <Button
                         size="sm"
                         variant="secondary"
@@ -484,8 +476,7 @@ export default function FeesPage() {
                       className="space-y-2"
                     >
                       <p className="text-xs text-slate-600">
-                        Amount received now · remaining{" "}
-                        {formatCurrency(due)}
+                        Partial · remaining {formatCurrency(due)}
                       </p>
                       <div className="flex gap-2 items-center">
                         <Input
