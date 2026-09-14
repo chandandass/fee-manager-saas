@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   PageHeader,
   Card,
@@ -15,7 +15,7 @@ import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageFees } from "@/domain/use-cases/ManageFees";
 import { FeeRecord, Student } from "@/domain/entities/Student";
-import { MessageCircle, Phone, Pencil } from "lucide-react";
+import { MessageCircle, Phone, Pencil, ChevronDown, Check } from "lucide-react";
 import { whatsappService } from "@/infrastructure/whatsapp/WhatsAppService";
 
 const repos = createRepositories();
@@ -26,8 +26,11 @@ export default function FeesPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [filter, setFilter] = useState<"all" | "pending" | "paid">("pending");
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<FeeRecord | null>(null);
+  const [partialFee, setPartialFee] = useState<FeeRecord | null>(null);
+  const [editFee, setEditFee] = useState<FeeRecord | null>(null);
   const [payAmount, setPayAmount] = useState("");
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   async function load() {
     const [all, studs] = await Promise.all([
@@ -41,6 +44,17 @@ export default function FeesPage() {
 
   useEffect(() => {
     load();
+  }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
   const phoneMap = Object.fromEntries(students.map((s) => [s.id, s.phone]));
@@ -57,56 +71,54 @@ export default function FeesPage() {
       return getDaysPending(b.month) - getDaysPending(a.month);
     });
 
-  function openPayment(fee: FeeRecord) {
-    setEditing(fee);
-    // Pre-fill with remaining due (or full amount if already paid, for edit)
-    const remaining = fee.amount - fee.paidAmount;
-    setPayAmount(String(remaining > 0 ? remaining : fee.amount));
+  async function markFullPaid(fee: FeeRecord) {
+    await manageFees.recordPayment(fee.id, fee.amount);
+    setOpenMenuId(null);
+    load();
   }
 
-  async function savePayment(e: React.FormEvent) {
+  function openPartial(fee: FeeRecord) {
+    setOpenMenuId(null);
+    setPartialFee(fee);
+    // Suggest remaining amount
+    const remaining = fee.amount - fee.paidAmount;
+    setPayAmount(remaining > 0 ? String(remaining) : "");
+  }
+
+  function openEdit(fee: FeeRecord) {
+    setEditFee(fee);
+    setPayAmount(String(fee.paidAmount));
+  }
+
+  async function savePartial(e: React.FormEvent) {
     e.preventDefault();
-    if (!editing) return;
-    const entered = Number(payAmount);
-    if (isNaN(entered) || entered < 0) return;
-
-    // User enters "amount received now" OR we treat as total paid?
-    // UX: field = "Total paid so far" is clearer for corrections.
-    // But teachers think "I received X today".
-    // Simple approach: field labeled "Amount paid (total for this month)"
-    // Pre-filled with remaining for new, or current paid for edit.
-    // Actually better: "How much has been paid in total for this month?"
-    const totalPaid =
-      editing.paidAmount > 0 && editing.status === "paid"
-        ? entered
-        : editing.paidAmount + entered;
-
-    // If opening from pending with remaining pre-filled, entered = remaining means full pay.
-    // If they change to smaller number, it's partial of the remaining → total = paidAmount + entered.
-    // If editing already paid, pre-fill full amount, they can lower it.
-
-    let newTotal: number;
-    if (editing.status === "paid" || editing.paidAmount === 0) {
-      // Fresh or full edit: treat input as total paid
-      newTotal = Math.min(editing.amount, entered);
-    } else {
-      // Partial already: pre-filled remaining; input is "extra received now"
-      // Simpler unified UX: always treat field as TOTAL paid for the month
-      newTotal = Math.min(editing.amount, entered);
-    }
-
-    // Unified: always "Total amount paid for this month"
-    newTotal = Math.min(editing.amount, Math.max(0, entered));
-
-    await manageFees.recordPayment(editing.id, newTotal);
-    setEditing(null);
+    if (!partialFee) return;
+    const amount = Number(payAmount);
+    if (isNaN(amount) || amount < 0) return;
+    // Total paid = previous + this payment, or if they enter total directly
+    // Field = "Amount received now" for partial flow
+    const newTotal = Math.min(
+      partialFee.amount,
+      partialFee.paidAmount + amount
+    );
+    await manageFees.recordPayment(partialFee.id, newTotal);
+    setPartialFee(null);
     setPayAmount("");
     load();
   }
 
-  function openEdit(fee: FeeRecord) {
-    setEditing(fee);
-    setPayAmount(String(fee.paidAmount));
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editFee) return;
+    const amount = Number(payAmount);
+    if (isNaN(amount) || amount < 0) return;
+    await manageFees.recordPayment(
+      editFee.id,
+      Math.min(editFee.amount, amount)
+    );
+    setEditFee(null);
+    setPayAmount("");
+    load();
   }
 
   const statusVariant = (s: FeeRecord["status"]) =>
@@ -155,32 +167,79 @@ export default function FeesPage() {
             }
           >
             {label}
-            {key === "pending" && pendingCount > 0 ? " (" + pendingCount + ")" : ""}
+            {key === "pending" && pendingCount > 0
+              ? " (" + pendingCount + ")"
+              : ""}
           </button>
         ))}
       </div>
 
-      {/* Payment modal */}
+      {/* Partial payment modal */}
       <Modal
-        open={!!editing}
+        open={!!partialFee}
         onClose={() => {
-          setEditing(null);
+          setPartialFee(null);
           setPayAmount("");
         }}
-        title={editing?.status === "paid" ? "Edit payment" : "Record payment"}
+        title="Partial payment"
       >
-        {editing && (
-          <form onSubmit={savePayment} className="space-y-4">
+        {partialFee && (
+          <form onSubmit={savePartial} className="space-y-4">
             <div className="bg-slate-50 rounded-xl p-3 text-sm">
-              <p className="font-medium text-slate-900">{editing.studentName}</p>
+              <p className="font-medium text-slate-900">{partialFee.studentName}</p>
               <p className="text-slate-500 mt-0.5">
-                Monthly fee: {formatCurrency(editing.amount)}
+                Total fee: {formatCurrency(partialFee.amount)}
               </p>
-              {editing.paidAmount > 0 && (
+              {partialFee.paidAmount > 0 && (
                 <p className="text-slate-500">
-                  Already paid: {formatCurrency(editing.paidAmount)}
+                  Already paid: {formatCurrency(partialFee.paidAmount)}
                 </p>
               )}
+              <p className="text-slate-700 font-medium mt-1">
+                Remaining:{" "}
+                {formatCurrency(partialFee.amount - partialFee.paidAmount)}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Amount received now (₹)
+              </label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={partialFee.amount - partialFee.paidAmount}
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                placeholder="e.g. 500"
+                autoFocus
+              />
+            </div>
+
+            <Button type="submit" className="w-full" size="lg">
+              Save partial payment
+            </Button>
+          </form>
+        )}
+      </Modal>
+
+      {/* Edit paid modal (mistake correction) */}
+      <Modal
+        open={!!editFee}
+        onClose={() => {
+          setEditFee(null);
+          setPayAmount("");
+        }}
+        title="Edit payment"
+      >
+        {editFee && (
+          <form onSubmit={saveEdit} className="space-y-4">
+            <div className="bg-slate-50 rounded-xl p-3 text-sm">
+              <p className="font-medium text-slate-900">{editFee.studentName}</p>
+              <p className="text-slate-500 mt-0.5">
+                Monthly fee: {formatCurrency(editFee.amount)}
+              </p>
             </div>
 
             <div>
@@ -191,15 +250,13 @@ export default function FeesPage() {
                 type="number"
                 inputMode="numeric"
                 min={0}
-                max={editing.amount}
+                max={editFee.amount}
                 value={payAmount}
                 onChange={(e) => setPayAmount(e.target.value)}
-                placeholder="0"
                 autoFocus
               />
               <p className="text-xs text-slate-500 mt-1.5">
-                Enter full amount for complete payment, or less for partial.
-                Set 0 if marked by mistake.
+                Set 0 if marked paid by mistake.
               </p>
             </div>
 
@@ -208,9 +265,9 @@ export default function FeesPage() {
                 type="button"
                 variant="secondary"
                 className="flex-1"
-                onClick={() => setPayAmount(String(editing.amount))}
+                onClick={() => setPayAmount("0")}
               >
-                Full {formatCurrency(editing.amount)}
+                Mark unpaid
               </Button>
               <Button type="submit" className="flex-1">
                 Save
@@ -235,6 +292,7 @@ export default function FeesPage() {
             const due = fee.amount - fee.paidAmount;
             const days = getDaysPending(fee.month);
             const phone = phoneMap[fee.studentId] || "";
+            const menuOpen = openMenuId === fee.id;
 
             return (
               <Card key={fee.id} className="!p-4">
@@ -304,15 +362,50 @@ export default function FeesPage() {
                         </IconButton>
                       </>
                     )}
+
                     {fee.status === "paid" ? (
-                      <Button size="sm" variant="secondary" onClick={() => openEdit(fee)}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => openEdit(fee)}
+                      >
                         <Pencil size={14} />
                         Edit
                       </Button>
                     ) : (
-                      <Button size="sm" onClick={() => openPayment(fee)}>
-                        Record
-                      </Button>
+                      /* Paid button + small dropdown for Partial */
+                      <div className="relative flex" ref={menuOpen ? menuRef : undefined}>
+                        <Button
+                          size="sm"
+                          onClick={() => markFullPaid(fee)}
+                          className="rounded-r-none"
+                        >
+                          <Check size={15} />
+                          Paid
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenMenuId(menuOpen ? null : fee.id)
+                          }
+                          className="px-2 rounded-r-xl bg-blue-600 text-white hover:bg-blue-700 border-l border-blue-500 flex items-center"
+                          aria-label="More payment options"
+                        >
+                          <ChevronDown size={16} />
+                        </button>
+
+                        {menuOpen && (
+                          <div className="absolute right-0 bottom-full mb-1.5 w-44 bg-white rounded-xl border border-slate-200 shadow-lg py-1 z-20">
+                            <button
+                              type="button"
+                              onClick={() => openPartial(fee)}
+                              className="w-full text-left px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+                            >
+                              Partial payment…
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
