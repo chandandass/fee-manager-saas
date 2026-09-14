@@ -65,11 +65,11 @@ export default function AttendancePage() {
           <button
             key={b.id}
             onClick={() => setSelectedBatch(b.id)}
-            className={`px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${
+            className={
               selectedBatch === b.id
-                ? "bg-blue-600 text-white"
-                : "bg-white border border-slate-200 text-slate-600"
-            }`}
+                ? "px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition bg-blue-600 text-white"
+                : "px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition bg-white border border-slate-200 text-slate-600"
+            }
           >
             {b.name}
           </button>
@@ -93,25 +93,22 @@ export default function AttendancePage() {
                 <p className="text-sm font-medium">{s.name}</p>
                 <div className="flex gap-2">
                   <button
-                    onClick={() =>
-                      setPresent({ ...present, [s.id]: true })
-                    }
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${
+                    onClick={() => setPresent({ ...present, [s.id]: true })}
+                    className={
                       present[s.id]
-                        ? "bg-green-100 text-green-700"
-                        : "bg-slate-100 text-slate-400"
-                    }`}
+                        ? "w-10 h-10 rounded-xl flex items-center justify-center transition bg-green-100 text-green-700"
+                        : "w-10 h-10 rounded-xl flex items-center justify-center transition bg-slate-100 text-slate-400"
+                    }
                   >
                     <Check size={18} />
                   </button>
                   <button
-                    onClick={() =>
-                      setPresent({ ...present, [s.id]: false })
+                    onClick={() => setPresent({ ...present, [s.id]: false })}
+                    className={
+                      present[s.id] === false
+                        ? "w-10 h-10 rounded-xl flex items-center justify-center transition bg-red-100 text-red-700"
+                        : "w-10 h-10 rounded-xl flex items-center justify-center transition bg-slate-100 text-slate-400"
                     }
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${\n                      present[s.id] === false
-                        ? "bg-red-100 text-red-700"
-                        : "bg-slate-100 text-slate-400"
-                    }`}
                   >
                     <X size={18} />
                   </button>
