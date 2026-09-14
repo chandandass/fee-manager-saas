@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import {
   PageHeader,
   Card,
@@ -15,7 +15,7 @@ import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageFees } from "@/domain/use-cases/ManageFees";
 import { FeeRecord, Student } from "@/domain/entities/Student";
-import { MessageCircle, Phone, Pencil, ChevronDown, Check } from "lucide-react";
+import { MessageCircle, Phone, Pencil, ChevronDown, ChevronUp, Check } from "lucide-react";
 import { whatsappService } from "@/infrastructure/whatsapp/WhatsAppService";
 
 const repos = createRepositories();
@@ -29,8 +29,6 @@ export default function FeesPage() {
   const [partialFeeId, setPartialFeeId] = useState<string | null>(null);
   const [editFee, setEditFee] = useState<FeeRecord | null>(null);
   const [payAmount, setPayAmount] = useState("");
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
 
   async function load() {
     const [all, studs] = await Promise.all([
@@ -44,16 +42,6 @@ export default function FeesPage() {
 
   useEffect(() => {
     load();
-  }, []);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpenMenuId(null);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
   const phoneMap = Object.fromEntries(students.map((s) => [s.id, s.phone]));
@@ -72,13 +60,16 @@ export default function FeesPage() {
 
   async function markFullPaid(fee: FeeRecord) {
     await manageFees.recordPayment(fee.id, fee.amount);
-    setOpenMenuId(null);
     setPartialFeeId(null);
     load();
   }
 
-  function openPartial(fee: FeeRecord) {
-    setOpenMenuId(null);
+  function togglePartial(fee: FeeRecord) {
+    if (partialFeeId === fee.id) {
+      setPartialFeeId(null);
+      setPayAmount("");
+      return;
+    }
     setPartialFeeId(fee.id);
     const remaining = fee.amount - fee.paidAmount;
     setPayAmount(remaining > 0 ? String(remaining) : "");
@@ -171,7 +162,6 @@ export default function FeesPage() {
         ))}
       </div>
 
-      {/* Edit paid modal only (rare action) */}
       <Modal
         open={!!editFee}
         onClose={() => {
@@ -237,12 +227,16 @@ export default function FeesPage() {
             const due = fee.amount - fee.paidAmount;
             const days = getDaysPending(fee.month);
             const phone = phoneMap[fee.studentId] || "";
-            const menuOpen = openMenuId === fee.id;
             const showPartial = partialFeeId === fee.id;
 
             return (
               <div key={fee.id}>
-                <Card className={"!p-4 " + (showPartial ? "!rounded-b-none border-b-0" : "")}>
+                <Card
+                  className={
+                    "!p-4 " +
+                    (showPartial ? "!rounded-b-none border-b-0" : "")
+                  }
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="font-semibold text-sm truncate">
@@ -322,10 +316,7 @@ export default function FeesPage() {
                           Edit
                         </Button>
                       ) : (
-                        <div
-                          className="relative flex"
-                          ref={menuOpen ? menuRef : undefined}
-                        >
+                        <div className="flex">
                           <Button
                             size="sm"
                             onClick={() => markFullPaid(fee)}
@@ -336,43 +327,38 @@ export default function FeesPage() {
                           </Button>
                           <button
                             type="button"
-                            onClick={() =>
-                              setOpenMenuId(menuOpen ? null : fee.id)
+                            onClick={() => togglePartial(fee)}
+                            className={
+                              "px-2.5 rounded-r-xl flex items-center border-l border-blue-500 " +
+                              (showPartial
+                                ? "bg-blue-700 text-white"
+                                : "bg-blue-600 text-white hover:bg-blue-700")
                             }
-                            className="px-2 rounded-r-xl bg-blue-600 text-white hover:bg-blue-700 border-l border-blue-500 flex items-center"
-                            aria-label="More payment options"
+                            title="Partial payment"
+                            aria-label="Partial payment"
                           >
-                            <ChevronDown size={16} />
+                            {showPartial ? (
+                              <ChevronUp size={16} />
+                            ) : (
+                              <ChevronDown size={16} />
+                            )}
                           </button>
-
-                          {menuOpen && (
-                            <div className="absolute right-0 bottom-full mb-1.5 w-44 bg-white rounded-xl border border-slate-200 shadow-lg py-1 z-20">
-                              <button
-                                type="button"
-                                onClick={() => openPartial(fee)}
-                                className="w-full text-left px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
-                              >
-                                Partial payment…
-                              </button>
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
                   </div>
                 </Card>
 
-                {/* Inline partial form – attached under the card */}
+                {/* Inline partial – opens in one tap from chevron */}
                 {showPartial && (
-                  <div className="bg-slate-50 border border-t-0 border-slate-200 rounded-b-2xl px-4 py-3">
+                  <div className="bg-blue-50/80 border border-t-0 border-blue-100 rounded-b-2xl px-4 py-3">
                     <form
                       onSubmit={(e) => savePartial(fee, e)}
-                      className="space-y-3"
+                      className="space-y-2"
                     >
-                      <p className="text-xs text-slate-500">
-                        Remaining: {formatCurrency(due)}
-                        {fee.paidAmount > 0 &&
-                          " · already paid " + formatCurrency(fee.paidAmount)}
+                      <p className="text-xs text-slate-600">
+                        Partial payment · remaining{" "}
+                        {formatCurrency(due)}
                       </p>
                       <div className="flex gap-2 items-center">
                         <Input
@@ -382,8 +368,8 @@ export default function FeesPage() {
                           max={due}
                           value={payAmount}
                           onChange={(e) => setPayAmount(e.target.value)}
-                          placeholder="Amount received (₹)"
-                          className="flex-1"
+                          placeholder="₹ amount"
+                          className="flex-1 bg-white"
                           autoFocus
                         />
                         <Button type="submit" size="sm">
