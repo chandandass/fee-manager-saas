@@ -13,11 +13,8 @@ import {
   Building2,
   CreditCard,
   Bell,
-  ClipboardList,
-  ChevronRight,
   Sparkles,
 } from "lucide-react";
-import Link from "next/link";
 
 const repos = createRepositories();
 
@@ -84,19 +81,10 @@ export default function SettingsPage() {
       </Card>
 
       <div className="space-y-1">
-        <Link href="/attendance">
-          <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200">
-            <div className="flex items-center gap-3">
-              <ClipboardList size={18} className="text-slate-500" />
-              <span className="text-sm font-medium">Attendance</span>
-            </div>
-            <ChevronRight size={16} className="text-slate-400" />
-          </div>
-        </Link>
         <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 opacity-60">
           <div className="flex items-center gap-3">
             <Bell size={18} className="text-slate-500" />
-            <span className="text-sm font-medium">Reminder Settings</span>
+            <span className="text-sm font-medium">Fee Reminders / Notifications</span>
           </div>
           <Badge variant="default">Soon</Badge>
         </div>

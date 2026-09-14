@@ -1,7 +1,8 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes } from "react";
+import { ReactNode, ButtonHTMLAttributes, InputHTMLAttributes, useEffect } from "react";
+import { X } from "lucide-react";
 
 export function Card({
   children,
@@ -196,5 +197,91 @@ export function StatCard({
       <p className="text-2xl font-semibold text-slate-900 mt-1">{value}</p>
       {sub && <p className="text-xs text-slate-500 mt-1">{sub}</p>}
     </Card>
+  );
+}
+
+/** Bottom sheet / modal for forms */
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        aria-hidden
+      />
+      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-5 animate-in slide-in-from-bottom duration-200">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Icon button for Call / WhatsApp */
+export function IconButton({
+  href,
+  onClick,
+  variant = "default",
+  children,
+  title,
+}: {
+  href?: string;
+  onClick?: () => void;
+  variant?: "default" | "whatsapp" | "call";
+  children: ReactNode;
+  title?: string;
+}) {
+  const styles = {
+    default: "bg-slate-100 text-slate-600 hover:bg-slate-200",
+    whatsapp: "bg-green-50 text-green-600 hover:bg-green-100",
+    call: "bg-blue-50 text-blue-600 hover:bg-blue-100",
+  };
+  const className = cn(
+    "w-10 h-10 rounded-xl flex items-center justify-center transition",
+    styles[variant]
+  );
+
+  if (href) {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={className} title={title}>
+        {children}
+      </a>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} className={className} title={title}>
+      {children}
+    </button>
   );
 }

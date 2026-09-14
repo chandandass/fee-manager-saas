@@ -8,13 +8,14 @@ import {
   Card,
   Button,
   Badge,
+  IconButton,
 } from "@/presentation/components/ui";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { GetDashboardStats } from "@/domain/use-cases/GetDashboardStats";
 import { ManageFees } from "@/domain/use-cases/ManageFees";
-import { DashboardStats, FeeRecord } from "@/domain/entities/Student";
-import { MessageCircle, ArrowRight, Users, IndianRupee } from "lucide-react";
+import { DashboardStats, FeeRecord, Student } from "@/domain/entities/Student";
+import { MessageCircle, Phone, ArrowRight, Users, IndianRupee } from "lucide-react";
 import { whatsappService } from "@/infrastructure/whatsapp/WhatsAppService";
 
 const repos = createRepositories();
@@ -24,20 +25,27 @@ const manageFees = new ManageFees(repos.fees);
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [pending, setPending] = useState<FeeRecord[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      const [s, p] = await Promise.all([
+      const [s, p, studs] = await Promise.all([
         getStats.execute(),
         manageFees.getPending(),
+        repos.students.getAll(),
       ]);
       setStats(s);
-      setPending(p);
+      setPending(
+        p.sort((a, b) => getDaysPending(b.month) - getDaysPending(a.month))
+      );
+      setStudents(studs);
       setLoading(false);
     }
     load();
   }, []);
+
+  const phoneMap = Object.fromEntries(students.map((s) => [s.id, s.phone]));
 
   if (loading || !stats) {
     return (
@@ -101,6 +109,7 @@ export default function DashboardPage() {
         </Link>
       </div>
 
+      {/* Pending list – main feature */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-slate-800">
@@ -122,37 +131,58 @@ export default function DashboardPage() {
           </Card>
         ) : (
           <div className="space-y-2">
-            {pending.slice(0, 5).map((fee) => (
-              <Card
-                key={fee.id}
-                className="flex items-center justify-between gap-3 !p-3"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {fee.studentName}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {formatCurrency(fee.amount - fee.paidAmount)} pending
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="success"
-                  onClick={() =>
-                    whatsappService.openReminder({
-                      phone: "9876543210",
-                      studentName: fee.studentName,
-                      amount: fee.amount - fee.paidAmount,
-                      month: fee.month,
-                      instituteName: "Sharma Tuition Centre",
-                    })
-                  }
-                >
-                  <MessageCircle size={16} />
-                  Remind
-                </Button>
-              </Card>
-            ))}
+            {pending.slice(0, 5).map((fee) => {
+              const due = fee.amount - fee.paidAmount;
+              const days = getDaysPending(fee.month);
+              const phone = phoneMap[fee.studentId] || "";
+              return (
+                <Card key={fee.id} className="!p-3.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">
+                        {fee.studentName}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {formatCurrency(due)}
+                        {days > 0 && (
+                          <span className="text-red-600 font-medium">
+                            {" · "}{daysPendingLabel(days)}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {phone && (
+                        <>
+                          <IconButton
+                            href={`tel:+91${phone.replace(/\D/g, "").slice(-10)}`}
+                            variant="call"
+                            title="Call"
+                          >
+                            <Phone size={16} />
+                          </IconButton>
+                          <IconButton
+                            onClick={() =>
+                              whatsappService.openReminder({
+                                phone,
+                                studentName: fee.studentName,
+                                amount: due,
+                                month: fee.month,
+                                instituteName: "Sharma Tuition Centre",
+                              })
+                            }
+                            variant="whatsapp"
+                            title="WhatsApp"
+                          >
+                            <MessageCircle size={16} />
+                          </IconButton>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>

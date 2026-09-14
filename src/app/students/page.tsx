@@ -9,12 +9,14 @@ import {
   Input,
   Select,
   EmptyState,
+  Modal,
+  IconButton,
 } from "@/presentation/components/ui";
 import { formatCurrency } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageStudents } from "@/domain/use-cases/ManageStudents";
 import { Student, Batch } from "@/domain/entities/Student";
-import { Plus, Search, Phone } from "lucide-react";
+import { Plus, Search, Phone, MessageCircle } from "lucide-react";
 
 const repos = createRepositories();
 const manageStudents = new ManageStudents(repos.students);
@@ -90,7 +92,7 @@ export default function StudentsPage() {
         title="Students"
         subtitle={`${students.length} total`}
         action={
-          <Button size="sm" onClick={() => setShowForm(!showForm)}>
+          <Button size="sm" onClick={() => setShowForm(true)}>
             <Plus size={16} />
             Add
           </Button>
@@ -110,60 +112,50 @@ export default function StudentsPage() {
         />
       </div>
 
-      {showForm && (
-        <Card>
-          <form onSubmit={handleCreate} className="space-y-3">
-            <h3 className="font-medium text-sm">New Student</h3>
-            <Input
-              placeholder="Student name *"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
-            <Input
-              placeholder="Phone *"
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              required
-            />
-            <Input
-              placeholder="Parent phone (optional)"
-              value={form.parentPhone}
-              onChange={(e) => setForm({ ...form, parentPhone: e.target.value })}
-            />
-            <Select
-              value={form.batchId}
-              onChange={(e) => setForm({ ...form, batchId: e.target.value })}
-              required
-            >
-              <option value="">Select batch *</option>
-              {batches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </Select>
-            <Input
-              type="number"
-              placeholder="Monthly fee (₹)"
-              value={form.monthlyFee}
-              onChange={(e) => setForm({ ...form, monthlyFee: e.target.value })}
-            />
-            <div className="flex gap-2">
-              <Button type="submit" className="flex-1">
-                Save
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setShowForm(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Add Student">
+        <form onSubmit={handleCreate} className="space-y-3">
+          <Input
+            placeholder="Student name *"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            required
+          />
+          <Input
+            placeholder="Phone *"
+            value={form.phone}
+            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            required
+            inputMode="tel"
+          />
+          <Input
+            placeholder="Parent phone (optional)"
+            value={form.parentPhone}
+            onChange={(e) => setForm({ ...form, parentPhone: e.target.value })}
+            inputMode="tel"
+          />
+          <Select
+            value={form.batchId}
+            onChange={(e) => setForm({ ...form, batchId: e.target.value })}
+            required
+          >
+            <option value="">Select batch *</option>
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </Select>
+          <Input
+            type="number"
+            placeholder="Monthly fee (₹)"
+            value={form.monthlyFee}
+            onChange={(e) => setForm({ ...form, monthlyFee: e.target.value })}
+          />
+          <Button type="submit" className="w-full" size="lg">
+            Save Student
+          </Button>
+        </form>
+      </Modal>
 
       {filtered.length === 0 ? (
         <EmptyState
@@ -180,23 +172,33 @@ export default function StudentsPage() {
           {filtered.map((s) => (
             <Card key={s.id} className="!p-3.5">
               <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="font-medium text-sm truncate">{s.name}</p>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {batchName(s.batchId)}
                   </p>
-                  <div className="flex items-center gap-1.5 mt-1.5 text-xs text-slate-500">
-                    <Phone size={12} />
-                    {s.phone}
-                  </div>
+                  <p className="text-xs text-slate-400 mt-1">{s.phone}</p>
                 </div>
-                <div className="text-right shrink-0">
+                <div className="flex flex-col items-end gap-2 shrink-0">
                   <p className="text-sm font-semibold">
                     {formatCurrency(s.monthlyFee)}
                   </p>
-                  <Badge variant={s.isActive ? "success" : "default"}>
-                    {s.isActive ? "Active" : "Inactive"}
-                  </Badge>
+                  <div className="flex gap-1.5">
+                    <IconButton
+                      href={`tel:+91${s.phone.replace(/\D/g, "").slice(-10)}`}
+                      variant="call"
+                      title="Call"
+                    >
+                      <Phone size={16} />
+                    </IconButton>
+                    <IconButton
+                      href={`https://wa.me/91${s.phone.replace(/\D/g, "").slice(-10)}`}
+                      variant="whatsapp"
+                      title="WhatsApp"
+                    >
+                      <MessageCircle size={16} />
+                    </IconButton>
+                  </div>
                 </div>
               </div>
             </Card>

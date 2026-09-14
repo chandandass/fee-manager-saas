@@ -8,6 +8,7 @@ import {
   Badge,
   Input,
   EmptyState,
+  Modal,
 } from "@/presentation/components/ui";
 import { formatCurrency } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
@@ -67,56 +68,44 @@ export default function BatchesPage() {
         title="Batches"
         subtitle={`${batches.length} batches`}
         action={
-          <Button size="sm" onClick={() => setShowForm(!showForm)}>
+          <Button size="sm" onClick={() => setShowForm(true)}>
             <Plus size={16} />
             Add
           </Button>
         }
       />
 
-      {showForm && (
-        <Card>
-          <form onSubmit={handleCreate} className="space-y-3">
-            <h3 className="font-medium text-sm">New Batch</h3>
-            <Input
-              placeholder="Batch name * (e.g. Class 10 Maths)"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
-            <Input
-              placeholder="Subject"
-              value={form.subject}
-              onChange={(e) => setForm({ ...form, subject: e.target.value })}
-            />
-            <Input
-              placeholder="Schedule (e.g. Mon Wed Fri 5-6 PM)"
-              value={form.schedule}
-              onChange={(e) => setForm({ ...form, schedule: e.target.value })}
-            />
-            <Input
-              type="number"
-              placeholder="Default monthly fee (₹)"
-              value={form.monthlyFeeDefault}
-              onChange={(e) =>
-                setForm({ ...form, monthlyFeeDefault: e.target.value })
-              }
-            />
-            <div className="flex gap-2">
-              <Button type="submit" className="flex-1">
-                Save
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setShowForm(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Add Batch">
+        <form onSubmit={handleCreate} className="space-y-3">
+          <Input
+            placeholder="Batch name * (e.g. Class 10 Maths)"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            required
+          />
+          <Input
+            placeholder="Subject"
+            value={form.subject}
+            onChange={(e) => setForm({ ...form, subject: e.target.value })}
+          />
+          <Input
+            placeholder="Schedule (e.g. Mon Wed Fri 5-6 PM)"
+            value={form.schedule}
+            onChange={(e) => setForm({ ...form, schedule: e.target.value })}
+          />
+          <Input
+            type="number"
+            placeholder="Default monthly fee (₹)"
+            value={form.monthlyFeeDefault}
+            onChange={(e) =>
+              setForm({ ...form, monthlyFeeDefault: e.target.value })
+            }
+          />
+          <Button type="submit" className="w-full" size="lg">
+            Save Batch
+          </Button>
+        </form>
+      </Modal>
 
       {batches.length === 0 ? (
         <EmptyState
