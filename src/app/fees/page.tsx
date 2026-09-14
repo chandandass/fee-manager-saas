@@ -292,8 +292,9 @@ export default function FeesPage() {
                       : "")
                   }
                 >
+                  {/* Top: name left · snooze + status right */}
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm truncate">
                         {fee.studentName}
                       </p>
@@ -315,15 +316,39 @@ export default function FeesPage() {
                         )}
                       </p>
                     </div>
-                    <Badge variant={statusVariant(fee.status)}>
-                      {fee.status === "paid"
-                        ? "Paid"
-                        : fee.status === "partial"
-                        ? "Partial"
-                        : "Pending"}
-                    </Badge>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Snooze: left of status (only for active pending) */}
+                      {fee.status !== "paid" && !snoozed && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPartialFeeId(null);
+                            setSnoozeMenuId(showSnooze ? null : fee.id);
+                          }}
+                          className={
+                            "w-8 h-8 rounded-lg flex items-center justify-center transition " +
+                            (showSnooze
+                              ? "bg-amber-100 text-amber-700"
+                              : "text-slate-400 hover:bg-slate-100 hover:text-slate-600")
+                          }
+                          title="Snooze / later"
+                          aria-label="Snooze"
+                        >
+                          <Clock size={16} />
+                        </button>
+                      )}
+                      <Badge variant={statusVariant(fee.status)}>
+                        {fee.status === "paid"
+                          ? "Paid"
+                          : fee.status === "partial"
+                          ? "Partial"
+                          : "Pending"}
+                      </Badge>
+                    </div>
                   </div>
 
+                  {/* Amount + primary actions */}
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <div>
                       <p className="text-lg font-semibold text-slate-900">
@@ -388,50 +413,32 @@ export default function FeesPage() {
                           Bring back
                         </Button>
                       ) : (
-                        <div className="flex items-center gap-1">
+                        <div className="flex">
+                          <Button
+                            size="sm"
+                            onClick={() => markFullPaid(fee)}
+                            className="rounded-r-none"
+                          >
+                            <Check size={15} />
+                            Paid
+                          </Button>
                           <button
                             type="button"
-                            onClick={() => {
-                              setPartialFeeId(null);
-                              setSnoozeMenuId(showSnooze ? null : fee.id);
-                            }}
+                            onClick={() => togglePartial(fee)}
                             className={
-                              "w-9 h-9 rounded-xl flex items-center justify-center transition " +
-                              (showSnooze
-                                ? "bg-amber-100 text-amber-700"
-                                : "bg-slate-100 text-slate-500 hover:bg-slate-200")
+                              "px-2.5 rounded-r-xl flex items-center border-l border-blue-500 " +
+                              (showPartial
+                                ? "bg-blue-700 text-white"
+                                : "bg-blue-600 text-white hover:bg-blue-700")
                             }
-                            title="Snooze / later"
+                            title="Partial payment"
                           >
-                            <Clock size={16} />
+                            {showPartial ? (
+                              <ChevronUp size={16} />
+                            ) : (
+                              <ChevronDown size={16} />
+                            )}
                           </button>
-                          <div className="flex">
-                            <Button
-                              size="sm"
-                              onClick={() => markFullPaid(fee)}
-                              className="rounded-r-none"
-                            >
-                              <Check size={15} />
-                              Paid
-                            </Button>
-                            <button
-                              type="button"
-                              onClick={() => togglePartial(fee)}
-                              className={
-                                "px-2.5 rounded-r-xl flex items-center border-l border-blue-500 " +
-                                (showPartial
-                                  ? "bg-blue-700 text-white"
-                                  : "bg-blue-600 text-white hover:bg-blue-700")
-                              }
-                              title="Partial payment"
-                            >
-                              {showPartial ? (
-                                <ChevronUp size={16} />
-                              ) : (
-                                <ChevronDown size={16} />
-                              )}
-                            </button>
-                          </div>
                         </div>
                       )}
                     </div>
