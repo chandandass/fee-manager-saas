@@ -15,20 +15,36 @@ import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageFees } from "@/domain/use-cases/ManageFees";
 import { FeeRecord, Student } from "@/domain/entities/Student";
-import { MessageCircle, Phone, Pencil, ChevronDown, ChevronUp, Check } from "lucide-react";
+import {
+  MessageCircle,
+  Phone,
+  Pencil,
+  ChevronDown,
+  ChevronUp,
+  Check,
+  Clock,
+} from "lucide-react";
 import { whatsappService } from "@/infrastructure/whatsapp/WhatsAppService";
 
 const repos = createRepositories();
 const manageFees = new ManageFees(repos.fees);
 
+function isSnoozed(fee: FeeRecord): boolean {
+  if (!fee.snoozedUntil) return false;
+  return fee.snoozedUntil > new Date().toISOString().slice(0, 10);
+}
+
 export default function FeesPage() {
   const [fees, setFees] = useState<FeeRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
-  const [filter, setFilter] = useState<"all" | "pending" | "paid">("pending");
+  const [filter, setFilter] = useState<"pending" | "snoozed" | "paid" | "all">(
+    "pending"
+  );
   const [loading, setLoading] = useState(true);
   const [partialFeeId, setPartialFeeId] = useState<string | null>(null);
   const [editFee, setEditFee] = useState<FeeRecord | null>(null);
   const [payAmount, setPayAmount] = useState("");
+  const [snoozeMenuId, setSnoozeMenuId] = useState<string | null>(null);
 
   async function load() {
     const [all, studs] = await Promise.all([
@@ -48,7 +64,10 @@ export default function FeesPage() {
 
   const filtered = fees
     .filter((f) => {
-      if (filter === "pending") return f.status !== "paid";
+      if (filter === "pending")
+        return f.status !== "paid" && !isSnoozed(f);
+      if (filter === "snoozed")
+        return f.status !== "paid" && isSnoozed(f);
       if (filter === "paid") return f.status === "paid";
       return true;
     })
@@ -61,6 +80,7 @@ export default function FeesPage() {
   async function markFullPaid(fee: FeeRecord) {
     await manageFees.recordPayment(fee.id, fee.amount);
     setPartialFeeId(null);
+    setSnoozeMenuId(null);
     load();
   }
 
@@ -70,6 +90,7 @@ export default function FeesPage() {
       setPayAmount("");
       return;
     }
+    setSnoozeMenuId(null);
     setPartialFeeId(fee.id);
     const remaining = fee.amount - fee.paidAmount;
     setPayAmount(remaining > 0 ? String(remaining) : "");
@@ -109,6 +130,18 @@ export default function FeesPage() {
     load();
   }
 
+  async function doSnooze(fee: FeeRecord, days: number) {
+    await manageFees.snooze(fee.id, days);
+    setSnoozeMenuId(null);
+    setPartialFeeId(null);
+    load();
+  }
+
+  async function unsnooze(fee: FeeRecord) {
+    await manageFees.clearSnooze(fee.id);
+    load();
+  }
+
   const statusVariant = (s: FeeRecord["status"]) =>
     s === "paid" ? "success" : s === "partial" ? "warning" : "danger";
 
@@ -121,26 +154,35 @@ export default function FeesPage() {
     );
   }
 
-  const pendingCount = fees.filter((f) => f.status !== "paid").length;
-  const pendingAmount = fees
-    .filter((f) => f.status !== "paid")
-    .reduce((s, f) => s + (f.amount - f.paidAmount), 0);
+  const activePending = fees.filter(
+    (f) => f.status !== "paid" && !isSnoozed(f)
+  );
+  const snoozedCount = fees.filter(
+    (f) => f.status !== "paid" && isSnoozed(f)
+  ).length;
+  const pendingAmount = activePending.reduce(
+    (s, f) => s + (f.amount - f.paidAmount),
+    0
+  );
 
   return (
     <div className="p-4 space-y-4">
       <PageHeader
         title="Fees"
         subtitle={
-          pendingCount > 0
-            ? pendingCount + " pending · " + formatCurrency(pendingAmount)
-            : "All clear this month"
+          activePending.length > 0
+            ? activePending.length +
+              " need attention · " +
+              formatCurrency(pendingAmount)
+            : "All clear"
         }
       />
 
       <div className="flex gap-2 overflow-x-auto pb-1">
         {(
           [
-            ["pending", "Pending"],
+            ["pending", "Needs attention"],
+            ["snoozed", "Snoozed"],
             ["paid", "Paid"],
             ["all", "All"],
           ] as const
@@ -155,8 +197,11 @@ export default function FeesPage() {
             }
           >
             {label}
-            {key === "pending" && pendingCount > 0
-              ? " (" + pendingCount + ")"
+            {key === "pending" && activePending.length > 0
+              ? " (" + activePending.length + ")"
+              : ""}
+            {key === "snoozed" && snoozedCount > 0
+              ? " (" + snoozedCount + ")"
               : ""}
           </button>
         ))}
@@ -214,10 +259,18 @@ export default function FeesPage() {
 
       {filtered.length === 0 ? (
         <EmptyState
-          title={filter === "pending" ? "No pending fees" : "No fee records"}
+          title={
+            filter === "pending"
+              ? "Nothing needs attention"
+              : filter === "snoozed"
+              ? "No snoozed fees"
+              : "No fee records"
+          }
           description={
             filter === "pending"
-              ? "Sab fees clear hain. Great!"
+              ? "Sab clear — or check Snoozed if you hid some."
+              : filter === "snoozed"
+              ? "Snoozed items come back after the date you chose."
               : "Fee records will appear once students are added."
           }
         />
@@ -228,13 +281,17 @@ export default function FeesPage() {
             const days = getDaysPending(fee.month);
             const phone = phoneMap[fee.studentId] || "";
             const showPartial = partialFeeId === fee.id;
+            const showSnooze = snoozeMenuId === fee.id;
+            const snoozed = isSnoozed(fee);
 
             return (
               <div key={fee.id}>
                 <Card
                   className={
                     "!p-4 " +
-                    (showPartial ? "!rounded-b-none border-b-0" : "")
+                    (showPartial || showSnooze
+                      ? "!rounded-b-none border-b-0"
+                      : "")
                   }
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -244,9 +301,18 @@ export default function FeesPage() {
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5">
                         {fee.month}
-                        {fee.status !== "paid" && days > 0 && (
+                        {fee.status !== "paid" && days > 0 && !snoozed && (
                           <span className="text-red-600 font-medium">
                             {" · "}{daysPendingLabel(days)}
+                          </span>
+                        )}
+                        {snoozed && fee.snoozedUntil && (
+                          <span className="text-amber-600 font-medium">
+                            {" · "}snoozed till{" "}
+                            {new Date(fee.snoozedUntil).toLocaleDateString(
+                              "en-IN",
+                              { day: "numeric", month: "short" }
+                            )}
                           </span>
                         )}
                       </p>
@@ -277,7 +343,7 @@ export default function FeesPage() {
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {fee.status !== "paid" && phone && (
+                      {fee.status !== "paid" && phone && !snoozed && (
                         <>
                           <IconButton
                             href={
@@ -315,41 +381,100 @@ export default function FeesPage() {
                           <Pencil size={14} />
                           Edit
                         </Button>
+                      ) : snoozed ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => unsnooze(fee)}
+                        >
+                          Bring back
+                        </Button>
                       ) : (
-                        <div className="flex">
-                          <Button
-                            size="sm"
-                            onClick={() => markFullPaid(fee)}
-                            className="rounded-r-none"
-                          >
-                            <Check size={15} />
-                            Paid
-                          </Button>
+                        <div className="flex items-center gap-1">
                           <button
                             type="button"
-                            onClick={() => togglePartial(fee)}
+                            onClick={() => {
+                              setPartialFeeId(null);
+                              setSnoozeMenuId(
+                                showSnooze ? null : fee.id
+                              );
+                            }}
                             className={
-                              "px-2.5 rounded-r-xl flex items-center border-l border-blue-500 " +
-                              (showPartial
-                                ? "bg-blue-700 text-white"
-                                : "bg-blue-600 text-white hover:bg-blue-700")
+                              "w-9 h-9 rounded-xl flex items-center justify-center transition " +
+                              (showSnooze
+                                ? "bg-amber-100 text-amber-700"
+                                : "bg-slate-100 text-slate-500 hover:bg-slate-200")
                             }
-                            title="Partial payment"
-                            aria-label="Partial payment"
+                            title="Snooze / later"
                           >
-                            {showPartial ? (
-                              <ChevronUp size={16} />
-                            ) : (
-                              <ChevronDown size={16} />
-                            )}
+                            <Clock size={16} />
                           </button>
+                          <div className="flex">
+                            <Button
+                              size="sm"
+                              onClick={() => markFullPaid(fee)}
+                              className="rounded-r-none"
+                            >
+                              <Check size={15} />
+                              Paid
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => togglePartial(fee)}
+                              className={
+                                "px-2.5 rounded-r-xl flex items-center border-l border-blue-500 " +
+                                (showPartial
+                                  ? "bg-blue-700 text-white"
+                                  : "bg-blue-600 text-white hover:bg-blue-700")
+                              }
+                              title="Partial payment"
+                            >
+                              {showPartial ? (
+                                <ChevronUp size={16} />
+                              ) : (
+                                <ChevronDown size={16} />
+                              )}
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
                   </div>
                 </Card>
 
-                {/* Inline partial – opens in one tap from chevron */}
+                {/* Snooze options – attached under card */}
+                {showSnooze && (
+                  <div className="bg-amber-50 border border-t-0 border-amber-100 rounded-b-2xl px-4 py-3">
+                    <p className="text-xs text-slate-600 mb-2">
+                      Hide from “Needs attention” for a while
+                    </p>
+                    <div className="flex gap-2 flex-wrap">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => doSnooze(fee, 3)}
+                      >
+                        3 days
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => doSnooze(fee, 7)}
+                      >
+                        1 week
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setSnoozeMenuId(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Partial form */}
                 {showPartial && (
                   <div className="bg-blue-50/80 border border-t-0 border-blue-100 rounded-b-2xl px-4 py-3">
                     <form
@@ -357,8 +482,7 @@ export default function FeesPage() {
                       className="space-y-2"
                     >
                       <p className="text-xs text-slate-600">
-                        Partial payment · remaining{" "}
-                        {formatCurrency(due)}
+                        Partial · remaining {formatCurrency(due)}
                       </p>
                       <div className="flex gap-2 items-center">
                         <Input

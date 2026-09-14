@@ -34,13 +34,15 @@ export interface FeeRecord {
   status: FeeStatus;
   paidAt?: string;
   notes?: string;
+  /** ISO date — hide from default pending until this day */
+  snoozedUntil?: string;
 }
 
 export interface AttendanceRecord {
   id: string;
   studentId: string;
   batchId: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   present: boolean;
 }
 

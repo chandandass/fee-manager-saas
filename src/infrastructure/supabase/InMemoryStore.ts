@@ -48,6 +48,12 @@ function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function isSnoozedActive(fee: FeeRecord): boolean {
+  if (!fee.snoozedUntil) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return fee.snoozedUntil > today;
+}
+
 export class InMemoryStudentRepository implements IStudentRepository {
   async getAll() { return [...students]; }
   async getById(id: string) { return students.find((s) => s.id === id) || null; }
@@ -98,7 +104,9 @@ export class InMemoryFeeRepository implements IFeeRepository {
     return [...fees];
   }
   async getByStudent(studentId: string) { return fees.filter((f) => f.studentId === studentId); }
-  async getPending() { return fees.filter((f) => f.status !== "paid"); }
+  async getPending() {
+    return fees.filter((f) => f.status !== "paid" && !isSnoozedActive(f));
+  }
   async markPaid(id: string, paidAmount: number, paidAt?: string) {
     const idx = fees.findIndex((f) => f.id === id);
     if (idx === -1) throw new Error("Fee not found");
@@ -112,6 +120,7 @@ export class InMemoryFeeRepository implements IFeeRepository {
       paidAmount: newPaid,
       status,
       paidAt: newPaid > 0 ? (paidAt || new Date().toISOString()) : undefined,
+      snoozedUntil: status === "paid" ? undefined : fee.snoozedUntil,
     };
     return fees[idx];
   }
@@ -135,6 +144,18 @@ export class InMemoryFeeRepository implements IFeeRepository {
     const idx = fees.findIndex((f) => f.id === id);
     if (idx === -1) throw new Error("Fee not found");
     fees[idx] = { ...fees[idx], status, paidAmount: paidAmount ?? fees[idx].paidAmount };
+    return fees[idx];
+  }
+  async snooze(id: string, until: string) {
+    const idx = fees.findIndex((f) => f.id === id);
+    if (idx === -1) throw new Error("Fee not found");
+    fees[idx] = { ...fees[idx], snoozedUntil: until };
+    return fees[idx];
+  }
+  async clearSnooze(id: string) {
+    const idx = fees.findIndex((f) => f.id === id);
+    if (idx === -1) throw new Error("Fee not found");
+    fees[idx] = { ...fees[idx], snoozedUntil: undefined };
     return fees[idx];
   }
 }
@@ -162,7 +183,7 @@ export class InMemoryInstituteRepository implements IInstituteRepository {
     return institute;
   }
   async getDashboardStats(): Promise<DashboardStats> {
-    const pending = fees.filter((f) => f.status !== "paid");
+    const pending = fees.filter((f) => f.status !== "paid" && !isSnoozedActive(f));
     const collected = fees.filter((f) => f.month === currentMonth).reduce((sum, f) => sum + f.paidAmount, 0);
     return {
       totalStudents: students.filter((s) => s.isActive).length,

@@ -7,4 +7,6 @@ export interface IFeeRepository {
   markPaid(id: string, paidAmount: number, paidAt?: string): Promise<FeeRecord>;
   createMonthlyFees(month: string): Promise<FeeRecord[]>;
   updateStatus(id: string, status: FeeStatus, paidAmount?: number): Promise<FeeRecord>;
+  snooze(id: string, until: string): Promise<FeeRecord>;
+  clearSnooze(id: string): Promise<FeeRecord>;
 }
