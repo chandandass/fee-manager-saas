@@ -26,7 +26,7 @@ export default function FeesPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [filter, setFilter] = useState<"all" | "pending" | "paid">("pending");
   const [loading, setLoading] = useState(true);
-  const [partialFee, setPartialFee] = useState<FeeRecord | null>(null);
+  const [partialFeeId, setPartialFeeId] = useState<string | null>(null);
   const [editFee, setEditFee] = useState<FeeRecord | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -46,7 +46,6 @@ export default function FeesPage() {
     load();
   }, []);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -74,15 +73,20 @@ export default function FeesPage() {
   async function markFullPaid(fee: FeeRecord) {
     await manageFees.recordPayment(fee.id, fee.amount);
     setOpenMenuId(null);
+    setPartialFeeId(null);
     load();
   }
 
   function openPartial(fee: FeeRecord) {
     setOpenMenuId(null);
-    setPartialFee(fee);
-    // Suggest remaining amount
+    setPartialFeeId(fee.id);
     const remaining = fee.amount - fee.paidAmount;
     setPayAmount(remaining > 0 ? String(remaining) : "");
+  }
+
+  function closePartial() {
+    setPartialFeeId(null);
+    setPayAmount("");
   }
 
   function openEdit(fee: FeeRecord) {
@@ -90,20 +94,13 @@ export default function FeesPage() {
     setPayAmount(String(fee.paidAmount));
   }
 
-  async function savePartial(e: React.FormEvent) {
+  async function savePartial(fee: FeeRecord, e: React.FormEvent) {
     e.preventDefault();
-    if (!partialFee) return;
     const amount = Number(payAmount);
-    if (isNaN(amount) || amount < 0) return;
-    // Total paid = previous + this payment, or if they enter total directly
-    // Field = "Amount received now" for partial flow
-    const newTotal = Math.min(
-      partialFee.amount,
-      partialFee.paidAmount + amount
-    );
-    await manageFees.recordPayment(partialFee.id, newTotal);
-    setPartialFee(null);
-    setPayAmount("");
+    if (isNaN(amount) || amount <= 0) return;
+    const newTotal = Math.min(fee.amount, fee.paidAmount + amount);
+    await manageFees.recordPayment(fee.id, newTotal);
+    closePartial();
     load();
   }
 
@@ -174,57 +171,7 @@ export default function FeesPage() {
         ))}
       </div>
 
-      {/* Partial payment modal */}
-      <Modal
-        open={!!partialFee}
-        onClose={() => {
-          setPartialFee(null);
-          setPayAmount("");
-        }}
-        title="Partial payment"
-      >
-        {partialFee && (
-          <form onSubmit={savePartial} className="space-y-4">
-            <div className="bg-slate-50 rounded-xl p-3 text-sm">
-              <p className="font-medium text-slate-900">{partialFee.studentName}</p>
-              <p className="text-slate-500 mt-0.5">
-                Total fee: {formatCurrency(partialFee.amount)}
-              </p>
-              {partialFee.paidAmount > 0 && (
-                <p className="text-slate-500">
-                  Already paid: {formatCurrency(partialFee.paidAmount)}
-                </p>
-              )}
-              <p className="text-slate-700 font-medium mt-1">
-                Remaining:{" "}
-                {formatCurrency(partialFee.amount - partialFee.paidAmount)}
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Amount received now (₹)
-              </label>
-              <Input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={partialFee.amount - partialFee.paidAmount}
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-                placeholder="e.g. 500"
-                autoFocus
-              />
-            </div>
-
-            <Button type="submit" className="w-full" size="lg">
-              Save partial payment
-            </Button>
-          </form>
-        )}
-      </Modal>
-
-      {/* Edit paid modal (mistake correction) */}
+      {/* Edit paid modal only (rare action) */}
       <Modal
         open={!!editFee}
         onClose={() => {
@@ -241,7 +188,6 @@ export default function FeesPage() {
                 Monthly fee: {formatCurrency(editFee.amount)}
               </p>
             </div>
-
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
                 Total paid for this month (₹)
@@ -259,7 +205,6 @@ export default function FeesPage() {
                 Set 0 if marked paid by mistake.
               </p>
             </div>
-
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -293,123 +238,170 @@ export default function FeesPage() {
             const days = getDaysPending(fee.month);
             const phone = phoneMap[fee.studentId] || "";
             const menuOpen = openMenuId === fee.id;
+            const showPartial = partialFeeId === fee.id;
 
             return (
-              <Card key={fee.id} className="!p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm truncate">
-                      {fee.studentName}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {fee.month}
-                      {fee.status !== "paid" && days > 0 && (
-                        <span className="text-red-600 font-medium">
-                          {" · "}{daysPendingLabel(days)}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <Badge variant={statusVariant(fee.status)}>
-                    {fee.status === "paid"
-                      ? "Paid"
-                      : fee.status === "partial"
-                      ? "Partial"
-                      : "Pending"}
-                  </Badge>
-                </div>
-
-                <div className="mt-3 flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-lg font-semibold text-slate-900">
-                      {formatCurrency(due > 0 ? due : fee.amount)}
-                    </p>
-                    {fee.paidAmount > 0 && fee.status !== "paid" && (
-                      <p className="text-xs text-slate-500">
-                        of {formatCurrency(fee.amount)} · paid{" "}
-                        {formatCurrency(fee.paidAmount)}
+              <div key={fee.id}>
+                <Card className={"!p-4 " + (showPartial ? "!rounded-b-none border-b-0" : "")}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm truncate">
+                        {fee.studentName}
                       </p>
-                    )}
-                    {fee.status === "paid" && (
-                      <p className="text-xs text-slate-500">Fully paid</p>
-                    )}
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {fee.month}
+                        {fee.status !== "paid" && days > 0 && (
+                          <span className="text-red-600 font-medium">
+                            {" · "}{daysPendingLabel(days)}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <Badge variant={statusVariant(fee.status)}>
+                      {fee.status === "paid"
+                        ? "Paid"
+                        : fee.status === "partial"
+                        ? "Partial"
+                        : "Pending"}
+                    </Badge>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {fee.status !== "paid" && phone && (
-                      <>
-                        <IconButton
-                          href={"tel:+91" + phone.replace(/\D/g, "").slice(-10)}
-                          variant="call"
-                          title="Call"
-                        >
-                          <Phone size={18} />
-                        </IconButton>
-                        <IconButton
-                          onClick={() =>
-                            whatsappService.openReminder({
-                              phone,
-                              studentName: fee.studentName,
-                              amount: due,
-                              month: fee.month,
-                              instituteName: "Sharma Tuition Centre",
-                            })
-                          }
-                          variant="whatsapp"
-                          title="WhatsApp reminder"
-                        >
-                          <MessageCircle size={18} />
-                        </IconButton>
-                      </>
-                    )}
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {formatCurrency(due > 0 ? due : fee.amount)}
+                      </p>
+                      {fee.paidAmount > 0 && fee.status !== "paid" && (
+                        <p className="text-xs text-slate-500">
+                          of {formatCurrency(fee.amount)} · paid{" "}
+                          {formatCurrency(fee.paidAmount)}
+                        </p>
+                      )}
+                      {fee.status === "paid" && (
+                        <p className="text-xs text-slate-500">Fully paid</p>
+                      )}
+                    </div>
 
-                    {fee.status === "paid" ? (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => openEdit(fee)}
-                      >
-                        <Pencil size={14} />
-                        Edit
-                      </Button>
-                    ) : (
-                      /* Paid button + small dropdown for Partial */
-                      <div className="relative flex" ref={menuOpen ? menuRef : undefined}>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {fee.status !== "paid" && phone && (
+                        <>
+                          <IconButton
+                            href={
+                              "tel:+91" + phone.replace(/\D/g, "").slice(-10)
+                            }
+                            variant="call"
+                            title="Call"
+                          >
+                            <Phone size={18} />
+                          </IconButton>
+                          <IconButton
+                            onClick={() =>
+                              whatsappService.openReminder({
+                                phone,
+                                studentName: fee.studentName,
+                                amount: due,
+                                month: fee.month,
+                                instituteName: "Sharma Tuition Centre",
+                              })
+                            }
+                            variant="whatsapp"
+                            title="WhatsApp reminder"
+                          >
+                            <MessageCircle size={18} />
+                          </IconButton>
+                        </>
+                      )}
+
+                      {fee.status === "paid" ? (
                         <Button
                           size="sm"
-                          onClick={() => markFullPaid(fee)}
-                          className="rounded-r-none"
+                          variant="secondary"
+                          onClick={() => openEdit(fee)}
                         >
-                          <Check size={15} />
-                          Paid
+                          <Pencil size={14} />
+                          Edit
                         </Button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setOpenMenuId(menuOpen ? null : fee.id)
-                          }
-                          className="px-2 rounded-r-xl bg-blue-600 text-white hover:bg-blue-700 border-l border-blue-500 flex items-center"
-                          aria-label="More payment options"
+                      ) : (
+                        <div
+                          className="relative flex"
+                          ref={menuOpen ? menuRef : undefined}
                         >
-                          <ChevronDown size={16} />
-                        </button>
+                          <Button
+                            size="sm"
+                            onClick={() => markFullPaid(fee)}
+                            className="rounded-r-none"
+                          >
+                            <Check size={15} />
+                            Paid
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpenMenuId(menuOpen ? null : fee.id)
+                            }
+                            className="px-2 rounded-r-xl bg-blue-600 text-white hover:bg-blue-700 border-l border-blue-500 flex items-center"
+                            aria-label="More payment options"
+                          >
+                            <ChevronDown size={16} />
+                          </button>
 
-                        {menuOpen && (
-                          <div className="absolute right-0 bottom-full mb-1.5 w-44 bg-white rounded-xl border border-slate-200 shadow-lg py-1 z-20">
-                            <button
-                              type="button"
-                              onClick={() => openPartial(fee)}
-                              className="w-full text-left px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
-                            >
-                              Partial payment…
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                          {menuOpen && (
+                            <div className="absolute right-0 bottom-full mb-1.5 w-44 bg-white rounded-xl border border-slate-200 shadow-lg py-1 z-20">
+                              <button
+                                type="button"
+                                onClick={() => openPartial(fee)}
+                                className="w-full text-left px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50"
+                              >
+                                Partial payment…
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </Card>
+                </Card>
+
+                {/* Inline partial form – attached under the card */}
+                {showPartial && (
+                  <div className="bg-slate-50 border border-t-0 border-slate-200 rounded-b-2xl px-4 py-3">
+                    <form
+                      onSubmit={(e) => savePartial(fee, e)}
+                      className="space-y-3"
+                    >
+                      <p className="text-xs text-slate-500">
+                        Remaining: {formatCurrency(due)}
+                        {fee.paidAmount > 0 &&
+                          " · already paid " + formatCurrency(fee.paidAmount)}
+                      </p>
+                      <div className="flex gap-2 items-center">
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          max={due}
+                          value={payAmount}
+                          onChange={(e) => setPayAmount(e.target.value)}
+                          placeholder="Amount received (₹)"
+                          className="flex-1"
+                          autoFocus
+                        />
+                        <Button type="submit" size="sm">
+                          Save
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={closePartial}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
