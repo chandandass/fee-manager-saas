@@ -23,9 +23,8 @@ export function formatDate(date: string | Date): string {
 
 /** Assume fee due on 5th of the month. Returns days overdue (0 if not yet due). */
 export function getDaysPending(month: string): number {
-  // month = "YYYY-MM"
   const [y, m] = month.split("-").map(Number);
-  const due = new Date(y, m - 1, 5); // 5th of that month
+  const due = new Date(y, m - 1, 5);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   due.setHours(0, 0, 0, 0);
@@ -37,7 +36,8 @@ export function getDaysPending(month: string): number {
 export function daysPendingLabel(days: number): string {
   if (days <= 0) return "Due soon";
   if (days === 1) return "1 day overdue";
-  if (days < 30) return `${days} days overdue`;
+  if (days < 30) return days + " days overdue";
   const months = Math.floor(days / 30);
-  return months === 1 ? "1 month overdue" : `${months} months overdue";
+  if (months === 1) return "1 month overdue";
+  return months + " months overdue";
 }
