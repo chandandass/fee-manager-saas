@@ -13,10 +13,10 @@ import { IAttendanceRepository } from "@/domain/repositories/IAttendanceReposito
 import { IInstituteRepository } from "@/domain/repositories/IInstituteRepository";
 
 let students: Student[] = [
-  { id: "s1", name: "Rahul Sharma", phone: "9876543210", parentPhone: "9876543211", batchId: "b1", monthlyFee: 1500, joinedAt: "2025-06-01", isActive: true },
-  { id: "s2", name: "Priya Patel", phone: "9123456780", batchId: "b1", monthlyFee: 1500, joinedAt: "2025-07-15", isActive: true },
-  { id: "s3", name: "Amit Kumar", phone: "9988776655", batchId: "b2", monthlyFee: 2000, joinedAt: "2025-08-01", isActive: true },
-  { id: "s4", name: "Sneha Reddy", phone: "9765432109", parentPhone: "9765432108", batchId: "b2", monthlyFee: 2000, joinedAt: "2025-09-01", isActive: true },
+  { id: "s1", name: "Rahul Sharma", phone: "9876543210", parentPhone: "9876543211", batchId: "b1", monthlyFee: 1500, joinedAt: "2025-06-01", feeStartDay: 1, isActive: true },
+  { id: "s2", name: "Priya Patel", phone: "9123456780", batchId: "b1", monthlyFee: 1500, joinedAt: "2025-07-15", feeStartDay: 15, isActive: true },
+  { id: "s3", name: "Amit Kumar", phone: "9988776655", batchId: "b2", monthlyFee: 2000, joinedAt: "2025-08-01", feeStartDay: 1, isActive: true },
+  { id: "s4", name: "Sneha Reddy", phone: "9765432109", parentPhone: "9765432108", batchId: "b2", monthlyFee: 2000, joinedAt: "2025-09-01", feeStartDay: 5, isActive: true },
 ];
 
 let batches: Batch[] = [
@@ -59,7 +59,11 @@ export class InMemoryStudentRepository implements IStudentRepository {
   async getById(id: string) { return students.find((s) => s.id === id) || null; }
   async getByBatch(batchId: string) { return students.filter((s) => s.batchId === batchId); }
   async create(data: Omit<Student, "id">) {
-    const student: Student = { ...data, id: uid() };
+    const student: Student = {
+      ...data,
+      id: uid(),
+      feeStartDay: Math.min(28, Math.max(1, data.feeStartDay || 1)),
+    };
     students.push(student);
     const batch = batches.find((b) => b.id === data.batchId);
     if (batch) batch.studentCount += 1;

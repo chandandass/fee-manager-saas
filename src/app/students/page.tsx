@@ -11,7 +11,7 @@ import {
   Modal,
   IconButton,
 } from "@/presentation/components/ui";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, dayOfMonthLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageStudents } from "@/domain/use-cases/ManageStudents";
 import { Student, Batch } from "@/domain/entities/Student";
@@ -19,6 +19,8 @@ import { Plus, Search, Phone, MessageCircle } from "lucide-react";
 
 const repos = createRepositories();
 const manageStudents = new ManageStudents(repos.students);
+
+const defaultFeeDay = Math.min(28, new Date().getDate());
 
 export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
@@ -31,6 +33,7 @@ export default function StudentsPage() {
     parentPhone: "",
     batchId: "",
     monthlyFee: "",
+    feeStartDay: String(defaultFeeDay),
   });
   const [loading, setLoading] = useState(true);
 
@@ -66,6 +69,10 @@ export default function StudentsPage() {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name || !form.phone || !form.batchId) return;
+    const feeStartDay = Math.min(
+      28,
+      Math.max(1, Number(form.feeStartDay) || defaultFeeDay)
+    );
     await manageStudents.create({
       name: form.name.trim(),
       phone: form.phone.trim(),
@@ -73,9 +80,17 @@ export default function StudentsPage() {
       batchId: form.batchId,
       monthlyFee: Number(form.monthlyFee) || 0,
       joinedAt: new Date().toISOString().slice(0, 10),
+      feeStartDay,
       isActive: true,
     });
-    setForm({ name: "", phone: "", parentPhone: "", batchId: "", monthlyFee: "" });
+    setForm({
+      name: "",
+      phone: "",
+      parentPhone: "",
+      batchId: "",
+      monthlyFee: "",
+      feeStartDay: String(defaultFeeDay),
+    });
     setShowForm(false);
     load();
   }
@@ -160,7 +175,27 @@ export default function StudentsPage() {
               onChange={(e) => setForm({ ...form, monthlyFee: e.target.value })}
             />
             <p className="text-xs text-slate-500 mt-1">
-              Auto-filled from batch. Change if this student pays differently.
+              Auto-filled from batch. Change if needed.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Fee due every month on
+            </label>
+            <Select
+              value={form.feeStartDay}
+              onChange={(e) =>
+                setForm({ ...form, feeStartDay: e.target.value })
+              }
+            >
+              {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                <option key={d} value={String(d)}>
+                  {dayOfMonthLabel(d)}
+                </option>
+              ))}
+            </Select>
+            <p className="text-xs text-slate-500 mt-1.5">
+              e.g. joined on 15th → choose 15th. We won’t treat them overdue from the 1st.
             </p>
           </div>
           <Button type="submit" className="w-full" size="lg">
@@ -188,6 +223,7 @@ export default function StudentsPage() {
                   <p className="font-medium text-sm truncate">{s.name}</p>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {batchName(s.batchId)}
+                    {" · Fee on "}{dayOfMonthLabel(s.feeStartDay || 1)}
                   </p>
                   <p className="text-xs text-slate-400 mt-1">{s.phone}</p>
                 </div>

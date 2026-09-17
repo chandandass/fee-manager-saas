@@ -8,6 +8,8 @@ export interface Student {
   batchId: string;
   monthlyFee: number;
   joinedAt: string;
+  /** Day of month when fee is due (1–28). Student joining mid-month uses this cycle. */
+  feeStartDay: number;
   isActive: boolean;
   notes?: string;
 }

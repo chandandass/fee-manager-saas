@@ -21,16 +21,28 @@ export function formatDate(date: string | Date): string {
   }).format(new Date(date));
 }
 
-/** Assume fee due on 5th of the month. Returns days overdue (0 if not yet due). */
-export function getDaysPending(month: string): number {
+/** Day of month label: 1 → 1st, 15 → 15th */
+export function dayOfMonthLabel(day: number): string {
+  const d = Math.min(28, Math.max(1, day));
+  if (d === 1 || d === 21) return d + "st";
+  if (d === 2 || d === 22) return d + "nd";
+  if (d === 3 || d === 23) return d + "rd";
+  return d + "th";
+}
+
+/**
+ * Days overdue for a fee month, using student's fee start day (1–28).
+ * Before that day in the cycle → 0 (not due yet).
+ */
+export function getDaysPending(month: string, feeStartDay: number = 1): number {
   const [y, m] = month.split("-").map(Number);
-  const due = new Date(y, m - 1, 5);
+  const day = Math.min(28, Math.max(1, feeStartDay || 1));
+  const due = new Date(y, m - 1, day);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   due.setHours(0, 0, 0, 0);
   if (today <= due) return 0;
-  const diff = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
-  return diff;
+  return Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 export function daysPendingLabel(days: number): string {
