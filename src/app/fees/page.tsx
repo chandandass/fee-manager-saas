@@ -61,6 +61,13 @@ export default function FeesPage() {
   }, []);
 
   const phoneMap = Object.fromEntries(students.map((s) => [s.id, s.phone]));
+  const feeDayMap = Object.fromEntries(
+    students.map((s) => [s.id, s.feeStartDay || 1])
+  );
+
+  function daysFor(fee: FeeRecord) {
+    return getDaysPending(fee.month, feeDayMap[fee.studentId] || 1);
+  }
 
   const filtered = fees
     .filter((f) => {
@@ -72,7 +79,7 @@ export default function FeesPage() {
     .sort((a, b) => {
       if (a.status === "paid" && b.status !== "paid") return 1;
       if (a.status !== "paid" && b.status === "paid") return -1;
-      return getDaysPending(b.month) - getDaysPending(a.month);
+      return daysFor(b) - daysFor(a);
     });
 
   async function markFullPaid(fee: FeeRecord) {
@@ -276,7 +283,7 @@ export default function FeesPage() {
         <div className="space-y-3">
           {filtered.map((fee) => {
             const due = fee.amount - fee.paidAmount;
-            const days = getDaysPending(fee.month);
+            const days = daysFor(fee);
             const phone = phoneMap[fee.studentId] || "";
             const showPartial = partialFeeId === fee.id;
             const showSnooze = snoozeMenuId === fee.id;
@@ -292,7 +299,6 @@ export default function FeesPage() {
                       : "")
                   }
                 >
-                  {/* Top: name left · snooze + status right */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm truncate">
@@ -303,6 +309,11 @@ export default function FeesPage() {
                         {fee.status !== "paid" && days > 0 && !snoozed && (
                           <span className="text-red-600 font-medium">
                             {" · "}{daysPendingLabel(days)}
+                          </span>
+                        )}
+                        {fee.status !== "paid" && days === 0 && !snoozed && (
+                          <span className="text-slate-400">
+                            {" · "}not due yet
                           </span>
                         )}
                         {snoozed && fee.snoozedUntil && (
@@ -318,7 +329,6 @@ export default function FeesPage() {
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {/* Snooze: left of status (only for active pending) */}
                       {fee.status !== "paid" && !snoozed && (
                         <button
                           type="button"
@@ -348,7 +358,6 @@ export default function FeesPage() {
                     </div>
                   </div>
 
-                  {/* Amount + primary actions */}
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <div>
                       <p className="text-lg font-semibold text-slate-900">

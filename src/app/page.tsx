@@ -43,16 +43,26 @@ export default function DashboardPage() {
         repos.students.getAll(),
       ]);
       setStats(s);
-      setPending(
-        p.sort((a, b) => getDaysPending(b.month) - getDaysPending(a.month))
-      );
       setStudents(studs);
+      const feeDayMap = Object.fromEntries(
+        studs.map((st) => [st.id, st.feeStartDay || 1])
+      );
+      setPending(
+        p.sort(
+          (a, b) =>
+            getDaysPending(b.month, feeDayMap[b.studentId] || 1) -
+            getDaysPending(a.month, feeDayMap[a.studentId] || 1)
+        )
+      );
       setLoading(false);
     }
     load();
   }, []);
 
   const phoneMap = Object.fromEntries(students.map((s) => [s.id, s.phone]));
+  const feeDayMap = Object.fromEntries(
+    students.map((s) => [s.id, s.feeStartDay || 1])
+  );
 
   if (loading || !stats) {
     return (
@@ -67,7 +77,9 @@ export default function DashboardPage() {
     );
   }
 
-  const overdueCount = pending.filter((f) => getDaysPending(f.month) > 0).length;
+  const overdueCount = pending.filter(
+    (f) => getDaysPending(f.month, feeDayMap[f.studentId] || 1) > 0
+  ).length;
 
   return (
     <div className="p-4 space-y-5">
@@ -77,7 +89,6 @@ export default function DashboardPage() {
         action={<Badge variant="info">Trial</Badge>}
       />
 
-      {/* In-app notification strip — helpful, not pushy */}
       {pending.length > 0 ? (
         <Link href="/fees">
           <div className="flex items-center gap-3 rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3.5 active:bg-amber-100 transition">
@@ -180,8 +191,11 @@ export default function DashboardPage() {
         ) : (
           <div className="space-y-2">
             {pending.slice(0, 5).map((fee) => {
-              const due = fee.amount - fee.paidAmount;
-              const days = getDaysPending(fee.month);
+              const dueAmt = fee.amount - fee.paidAmount;
+              const days = getDaysPending(
+                fee.month,
+                feeDayMap[fee.studentId] || 1
+              );
               const phone = phoneMap[fee.studentId] || "";
               return (
                 <Card key={fee.id} className="!p-3.5">
@@ -191,11 +205,14 @@ export default function DashboardPage() {
                         {fee.studentName}
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {formatCurrency(due)}
+                        {formatCurrency(dueAmt)}
                         {days > 0 && (
                           <span className="text-red-600 font-medium">
                             {" · "}{daysPendingLabel(days)}
                           </span>
+                        )}
+                        {days === 0 && (
+                          <span className="text-slate-400"> · not due yet</span>
                         )}
                       </p>
                     </div>
@@ -217,7 +234,7 @@ export default function DashboardPage() {
                               whatsappService.openReminder({
                                 phone,
                                 studentName: fee.studentName,
-                                amount: due,
+                                amount: dueAmt,
                                 month: fee.month,
                                 instituteName: "Sharma Tuition Centre",
                               })
