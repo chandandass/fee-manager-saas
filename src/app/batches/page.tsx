@@ -13,19 +13,22 @@ import {
 import { formatCurrency } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { Batch } from "@/domain/entities/Student";
-import { Plus, Users } from "lucide-react";
+import { Plus, Users, Pencil } from "lucide-react";
 
 const repos = createRepositories();
+
+const emptyForm = {
+  name: "",
+  subject: "",
+  schedule: "",
+  monthlyFeeDefault: "",
+};
 
 export default function BatchesPage() {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    subject: "",
-    schedule: "",
-    monthlyFeeDefault: "",
-  });
+  const [editing, setEditing] = useState<Batch | null>(null);
+  const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -38,18 +41,47 @@ export default function BatchesPage() {
     load();
   }, []);
 
-  async function handleCreate(e: React.FormEvent) {
+  function openCreate() {
+    setEditing(null);
+    setForm(emptyForm);
+    setShowForm(true);
+  }
+
+  function openEdit(b: Batch) {
+    setEditing(b);
+    setForm({
+      name: b.name,
+      subject: b.subject || "",
+      schedule: b.schedule || "",
+      monthlyFeeDefault: String(b.monthlyFeeDefault),
+    });
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditing(null);
+    setForm(emptyForm);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name) return;
-    await repos.batches.create({
+    const data = {
       name: form.name.trim(),
       subject: form.subject || undefined,
       schedule: form.schedule || undefined,
       monthlyFeeDefault: Number(form.monthlyFeeDefault) || 0,
-      isActive: true,
-    });
-    setForm({ name: "", subject: "", schedule: "", monthlyFeeDefault: "" });
-    setShowForm(false);
+    };
+    if (editing) {
+      await repos.batches.update(editing.id, data);
+    } else {
+      await repos.batches.create({
+        ...data,
+        isActive: true,
+      });
+    }
+    closeForm();
     load();
   }
 
@@ -66,17 +98,21 @@ export default function BatchesPage() {
     <div className="p-4 space-y-4">
       <PageHeader
         title="Batches"
-        subtitle={`${batches.length} batches`}
+        subtitle={batches.length + " batches"}
         action={
-          <Button size="sm" onClick={() => setShowForm(true)}>
+          <Button size="sm" onClick={openCreate}>
             <Plus size={16} />
             Add
           </Button>
         }
       />
 
-      <Modal open={showForm} onClose={() => setShowForm(false)} title="Add Batch">
-        <form onSubmit={handleCreate} className="space-y-3">
+      <Modal
+        open={showForm}
+        onClose={closeForm}
+        title={editing ? "Edit Batch" : "Add Batch"}
+      >
+        <form onSubmit={handleSubmit} className="space-y-3">
           <Input
             placeholder="Batch name * (e.g. Class 10 Maths)"
             value={form.name}
@@ -102,7 +138,7 @@ export default function BatchesPage() {
             }
           />
           <Button type="submit" className="w-full" size="lg">
-            Save Batch
+            {editing ? "Save changes" : "Save Batch"}
           </Button>
         </form>
       </Modal>
@@ -112,7 +148,7 @@ export default function BatchesPage() {
           title="No batches yet"
           description="Create a batch first, then add students to it."
           action={
-            <Button size="sm" onClick={() => setShowForm(true)}>
+            <Button size="sm" onClick={openCreate}>
               <Plus size={16} /> Create Batch
             </Button>
           }
@@ -121,8 +157,8 @@ export default function BatchesPage() {
         <div className="space-y-2">
           {batches.map((b) => (
             <Card key={b.id} className="!p-4">
-              <div className="flex items-start justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
                   <p className="font-medium">{b.name}</p>
                   {b.subject && (
                     <p className="text-xs text-slate-500 mt-0.5">{b.subject}</p>
@@ -131,9 +167,19 @@ export default function BatchesPage() {
                     <p className="text-xs text-slate-500 mt-1">{b.schedule}</p>
                   )}
                 </div>
-                <Badge variant={b.isActive ? "success" : "default"}>
-                  {b.isActive ? "Active" : "Inactive"}
-                </Badge>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(b)}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    title="Edit"
+                  >
+                    <Pencil size={15} />
+                  </button>
+                  <Badge variant={b.isActive ? "success" : "default"}>
+                    {b.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
               </div>
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100">
                 <div className="flex items-center gap-1.5 text-sm text-slate-600">

@@ -15,26 +15,29 @@ import { formatCurrency, dayOfMonthLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageStudents } from "@/domain/use-cases/ManageStudents";
 import { Student, Batch } from "@/domain/entities/Student";
-import { Plus, Search, Phone, MessageCircle } from "lucide-react";
+import { Plus, Search, Phone, MessageCircle, Pencil } from "lucide-react";
 
 const repos = createRepositories();
 const manageStudents = new ManageStudents(repos.students);
 
 const defaultFeeDay = Math.min(28, new Date().getDate());
 
+const emptyForm = {
+  name: "",
+  phone: "",
+  parentPhone: "",
+  batchId: "",
+  monthlyFee: "",
+  feeStartDay: String(defaultFeeDay),
+};
+
 export default function StudentsPage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    phone: "",
-    parentPhone: "",
-    batchId: "",
-    monthlyFee: "",
-    feeStartDay: String(defaultFeeDay),
-  });
+  const [editing, setEditing] = useState<Student | null>(null);
+  const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -62,36 +65,66 @@ export default function StudentsPage() {
     setForm((prev) => ({
       ...prev,
       batchId,
-      monthlyFee: batch ? String(batch.monthlyFeeDefault) : prev.monthlyFee,
+      monthlyFee:
+        !editing && batch
+          ? String(batch.monthlyFeeDefault)
+          : batch && !prev.monthlyFee
+          ? String(batch.monthlyFeeDefault)
+          : prev.monthlyFee,
     }));
   }
 
-  async function handleCreate(e: React.FormEvent) {
+  function openCreate() {
+    setEditing(null);
+    setForm(emptyForm);
+    setShowForm(true);
+  }
+
+  function openEdit(s: Student) {
+    setEditing(s);
+    setForm({
+      name: s.name,
+      phone: s.phone,
+      parentPhone: s.parentPhone || "",
+      batchId: s.batchId,
+      monthlyFee: String(s.monthlyFee),
+      feeStartDay: String(s.feeStartDay || 1),
+    });
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    setShowForm(false);
+    setEditing(null);
+    setForm(emptyForm);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name || !form.phone || !form.batchId) return;
     const feeStartDay = Math.min(
       28,
       Math.max(1, Number(form.feeStartDay) || defaultFeeDay)
     );
-    await manageStudents.create({
+    const payload = {
       name: form.name.trim(),
       phone: form.phone.trim(),
       parentPhone: form.parentPhone || undefined,
       batchId: form.batchId,
       monthlyFee: Number(form.monthlyFee) || 0,
-      joinedAt: new Date().toISOString().slice(0, 10),
       feeStartDay,
-      isActive: true,
-    });
-    setForm({
-      name: "",
-      phone: "",
-      parentPhone: "",
-      batchId: "",
-      monthlyFee: "",
-      feeStartDay: String(defaultFeeDay),
-    });
-    setShowForm(false);
+    };
+
+    if (editing) {
+      await manageStudents.update(editing.id, payload);
+    } else {
+      await manageStudents.create({
+        ...payload,
+        joinedAt: new Date().toISOString().slice(0, 10),
+        isActive: true,
+      });
+    }
+    closeForm();
     load();
   }
 
@@ -114,7 +147,7 @@ export default function StudentsPage() {
         title="Students"
         subtitle={students.length + " total"}
         action={
-          <Button size="sm" onClick={() => setShowForm(true)}>
+          <Button size="sm" onClick={openCreate}>
             <Plus size={16} />
             Add
           </Button>
@@ -134,8 +167,12 @@ export default function StudentsPage() {
         />
       </div>
 
-      <Modal open={showForm} onClose={() => setShowForm(false)} title="Add Student">
-        <form onSubmit={handleCreate} className="space-y-3">
+      <Modal
+        open={showForm}
+        onClose={closeForm}
+        title={editing ? "Edit Student" : "Add Student"}
+      >
+        <form onSubmit={handleSubmit} className="space-y-3">
           <Input
             placeholder="Student name *"
             value={form.name}
@@ -175,7 +212,7 @@ export default function StudentsPage() {
               onChange={(e) => setForm({ ...form, monthlyFee: e.target.value })}
             />
             <p className="text-xs text-slate-500 mt-1">
-              Auto-filled from batch. Change if needed.
+              Auto-filled from batch when adding. Change if needed.
             </p>
           </div>
           <div>
@@ -195,11 +232,11 @@ export default function StudentsPage() {
               ))}
             </Select>
             <p className="text-xs text-slate-500 mt-1.5">
-              e.g. joined on 15th → choose 15th. We won’t treat them overdue from the 1st.
+              e.g. joined on 15th → choose 15th.
             </p>
           </div>
           <Button type="submit" className="w-full" size="lg">
-            Save Student
+            {editing ? "Save changes" : "Save Student"}
           </Button>
         </form>
       </Modal>
@@ -209,7 +246,7 @@ export default function StudentsPage() {
           title="No students yet"
           description="Add your first student to start tracking fees."
           action={
-            <Button size="sm" onClick={() => setShowForm(true)}>
+            <Button size="sm" onClick={openCreate}>
               <Plus size={16} /> Add Student
             </Button>
           }
@@ -232,6 +269,14 @@ export default function StudentsPage() {
                     {formatCurrency(s.monthlyFee)}
                   </p>
                   <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(s)}
+                      className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      title="Edit"
+                    >
+                      <Pencil size={15} />
+                    </button>
                     <IconButton
                       href={"tel:+91" + s.phone.replace(/\D/g, "").slice(-10)}
                       variant="call"
