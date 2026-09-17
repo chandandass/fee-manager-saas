@@ -34,6 +34,16 @@ function isSnoozed(fee: FeeRecord): boolean {
   return fee.snoozedUntil > new Date().toISOString().slice(0, 10);
 }
 
+type StudentFeeGroup = {
+  studentId: string;
+  studentName: string;
+  phone: string;
+  feeStartDay: number;
+  fees: FeeRecord[];
+  totalDue: number;
+  maxDays: number;
+};
+
 export default function FeesPage() {
   const [fees, setFees] = useState<FeeRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -41,6 +51,7 @@ export default function FeesPage() {
     "pending"
   );
   const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [partialFeeId, setPartialFeeId] = useState<string | null>(null);
   const [editFee, setEditFee] = useState<FeeRecord | null>(null);
   const [payAmount, setPayAmount] = useState("");
@@ -69,18 +80,44 @@ export default function FeesPage() {
     return getDaysPending(fee.month, feeDayMap[fee.studentId] || 1);
   }
 
-  const filtered = fees
-    .filter((f) => {
-      if (filter === "pending") return f.status !== "paid" && !isSnoozed(f);
-      if (filter === "snoozed") return f.status !== "paid" && isSnoozed(f);
-      if (filter === "paid") return f.status === "paid";
-      return true;
-    })
-    .sort((a, b) => {
-      if (a.status === "paid" && b.status !== "paid") return 1;
-      if (a.status !== "paid" && b.status === "paid") return -1;
-      return daysFor(b) - daysFor(a);
-    });
+  const filteredFees = fees.filter((f) => {
+    if (filter === "pending") return f.status !== "paid" && !isSnoozed(f);
+    if (filter === "snoozed") return f.status !== "paid" && isSnoozed(f);
+    if (filter === "paid") return f.status === "paid";
+    return true;
+  });
+
+  /** One card per student when pending/snoozed; paid/all can stay flatter but still grouped */
+  const groups: StudentFeeGroup[] = Object.values(
+    filteredFees.reduce<Record<string, StudentFeeGroup>>((acc, fee) => {
+      if (!acc[fee.studentId]) {
+        acc[fee.studentId] = {
+          studentId: fee.studentId,
+          studentName: fee.studentName,
+          phone: phoneMap[fee.studentId] || "",
+          feeStartDay: feeDayMap[fee.studentId] || 1,
+          fees: [],
+          totalDue: 0,
+          maxDays: 0,
+        };
+      }
+      const due = fee.amount - fee.paidAmount;
+      acc[fee.studentId].fees.push(fee);
+      if (fee.status !== "paid") {
+        acc[fee.studentId].totalDue += due;
+        acc[fee.studentId].maxDays = Math.max(
+          acc[fee.studentId].maxDays,
+          daysFor(fee)
+        );
+      }
+      return acc;
+    }, {})
+  )
+    .map((g) => ({
+      ...g,
+      fees: g.fees.sort((a, b) => a.month.localeCompare(b.month)),
+    }))
+    .sort((a, b) => b.maxDays - a.maxDays || b.totalDue - a.totalDue);
 
   async function markFullPaid(fee: FeeRecord) {
     await manageFees.recordPayment(fee.id, fee.amount);
@@ -147,6 +184,16 @@ export default function FeesPage() {
     load();
   }
 
+  async function snoozeAllPending(group: StudentFeeGroup, days: number) {
+    for (const fee of group.fees) {
+      if (fee.status !== "paid" && !isSnoozed(fee)) {
+        await manageFees.snooze(fee.id, days);
+      }
+    }
+    setSnoozeMenuId(null);
+    load();
+  }
+
   const statusVariant = (s: FeeRecord["status"]) =>
     s === "paid" ? "success" : s === "partial" ? "warning" : "danger";
 
@@ -177,7 +224,7 @@ export default function FeesPage() {
         subtitle={
           activePending.length > 0
             ? activePending.length +
-              " need attention · " +
+              " months · " +
               formatCurrency(pendingAmount)
             : "All clear"
         }
@@ -225,7 +272,7 @@ export default function FeesPage() {
             <div className="bg-slate-50 rounded-xl p-3 text-sm">
               <p className="font-medium text-slate-900">{editFee.studentName}</p>
               <p className="text-slate-500 mt-0.5">
-                Monthly fee: {formatCurrency(editFee.amount)}
+                {editFee.month} · {formatCurrency(editFee.amount)}
               </p>
             </div>
             <div>
@@ -241,9 +288,6 @@ export default function FeesPage() {
                 onChange={(e) => setPayAmount(e.target.value)}
                 autoFocus
               />
-              <p className="text-xs text-slate-500 mt-1.5">
-                Set 0 if marked paid by mistake.
-              </p>
             </div>
             <div className="flex gap-2">
               <Button
@@ -262,7 +306,7 @@ export default function FeesPage() {
         )}
       </Modal>
 
-      {filtered.length === 0 ? (
+      {groups.length === 0 ? (
         <EmptyState
           title={
             filter === "pending"
@@ -281,105 +325,101 @@ export default function FeesPage() {
         />
       ) : (
         <div className="space-y-3">
-          {filtered.map((fee) => {
-            const due = fee.amount - fee.paidAmount;
-            const days = daysFor(fee);
-            const phone = phoneMap[fee.studentId] || "";
-            const showPartial = partialFeeId === fee.id;
-            const showSnooze = snoozeMenuId === fee.id;
-            const snoozed = isSnoozed(fee);
+          {groups.map((group) => {
+            const multi = group.fees.length > 1;
+            const expanded = expandedId === group.studentId || !multi;
+            const showSnoozeAll = snoozeMenuId === "all-" + group.studentId;
+            const unpaidFees = group.fees.filter((f) => f.status !== "paid");
 
             return (
-              <div key={fee.id}>
+              <div key={group.studentId}>
                 <Card
                   className={
                     "!p-4 " +
-                    (showPartial || showSnooze
+                    (showSnoozeAll || (expanded && multi)
                       ? "!rounded-b-none border-b-0"
                       : "")
                   }
                 >
+                  {/* Student header — always one row per student */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <p className="font-semibold text-sm truncate">
-                        {fee.studentName}
+                        {group.studentName}
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {fee.month}
-                        {fee.status !== "paid" && days > 0 && !snoozed && (
-                          <span className="text-red-600 font-medium">
-                            {" · "}{daysPendingLabel(days)}
-                          </span>
-                        )}
-                        {fee.status !== "paid" && days === 0 && !snoozed && (
-                          <span className="text-slate-400">
-                            {" · "}not due yet
-                          </span>
-                        )}
-                        {snoozed && fee.snoozedUntil && (
-                          <span className="text-amber-600 font-medium">
-                            {" · "}snoozed till{" "}
-                            {new Date(fee.snoozedUntil).toLocaleDateString(
-                              "en-IN",
-                              { day: "numeric", month: "short" }
-                            )}
-                          </span>
-                        )}
+                        {multi
+                          ? group.fees.length +
+                            " months" +
+                            (group.maxDays > 0
+                              ? " · oldest " + daysPendingLabel(group.maxDays)
+                              : "")
+                          : group.fees[0].month +
+                            (group.maxDays > 0
+                              ? " · " + daysPendingLabel(group.maxDays)
+                              : group.fees[0].status !== "paid"
+                              ? " · not due yet"
+                              : "")}
                       </p>
                     </div>
-
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {fee.status !== "paid" && !snoozed && (
+                      {filter === "pending" && unpaidFees.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => {
-                            setPartialFeeId(null);
-                            setSnoozeMenuId(showSnooze ? null : fee.id);
-                          }}
+                          onClick={() =>
+                            setSnoozeMenuId(
+                              showSnoozeAll ? null : "all-" + group.studentId
+                            )
+                          }
                           className={
                             "w-8 h-8 rounded-lg flex items-center justify-center transition " +
-                            (showSnooze
+                            (showSnoozeAll
                               ? "bg-amber-100 text-amber-700"
-                              : "text-slate-400 hover:bg-slate-100 hover:text-slate-600")
+                              : "text-slate-400 hover:bg-slate-100")
                           }
-                          title="Snooze / later"
-                          aria-label="Snooze"
+                          title="Snooze"
                         >
                           <Clock size={16} />
                         </button>
                       )}
-                      <Badge variant={statusVariant(fee.status)}>
-                        {fee.status === "paid"
-                          ? "Paid"
-                          : fee.status === "partial"
-                          ? "Partial"
-                          : "Pending"}
-                      </Badge>
+                      {multi && (
+                        <Badge variant="warning">{group.fees.length} mo</Badge>
+                      )}
+                      {!multi && (
+                        <Badge variant={statusVariant(group.fees[0].status)}>
+                          {group.fees[0].status === "paid"
+                            ? "Paid"
+                            : group.fees[0].status === "partial"
+                            ? "Partial"
+                            : "Pending"}
+                        </Badge>
+                      )}
                     </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between gap-2">
                     <div>
                       <p className="text-lg font-semibold text-slate-900">
-                        {formatCurrency(due > 0 ? due : fee.amount)}
+                        {formatCurrency(
+                          group.totalDue > 0
+                            ? group.totalDue
+                            : group.fees[0].amount
+                        )}
                       </p>
-                      {fee.paidAmount > 0 && fee.status !== "paid" && (
+                      {multi && group.totalDue > 0 && (
                         <p className="text-xs text-slate-500">
-                          of {formatCurrency(fee.amount)} · paid{" "}
-                          {formatCurrency(fee.paidAmount)}
+                          total outstanding
                         </p>
-                      )}
-                      {fee.status === "paid" && (
-                        <p className="text-xs text-slate-500">Fully paid</p>
                       )}
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {fee.status !== "paid" && phone && !snoozed && (
+                      {group.phone && group.totalDue > 0 && (
                         <>
                           <IconButton
                             href={
-                              "tel:+91" + phone.replace(/\D/g, "").slice(-10)
+                              "tel:+91" +
+                              group.phone.replace(/\D/g, "").slice(-10)
                             }
                             variant="call"
                             title="Call"
@@ -389,35 +429,59 @@ export default function FeesPage() {
                           <IconButton
                             onClick={() =>
                               whatsappService.openReminder({
-                                phone,
-                                studentName: fee.studentName,
-                                amount: due,
-                                month: fee.month,
+                                phone: group.phone,
+                                studentName: group.studentName,
+                                amount: group.totalDue,
+                                month: multi
+                                  ? group.fees.length + " months"
+                                  : group.fees[0].month,
                                 instituteName: "Sharma Tuition Centre",
                               })
                             }
                             variant="whatsapp"
-                            title="WhatsApp reminder"
+                            title="WhatsApp"
                           >
                             <MessageCircle size={18} />
                           </IconButton>
                         </>
                       )}
 
-                      {fee.status === "paid" ? (
+                      {multi ? (
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => openEdit(fee)}
+                          onClick={() =>
+                            setExpandedId(
+                              expandedId === group.studentId
+                                ? null
+                                : group.studentId
+                            )
+                          }
+                        >
+                          {expandedId === group.studentId ? (
+                            <>
+                              <ChevronUp size={16} /> Hide
+                            </>
+                          ) : (
+                            <>
+                              <ChevronDown size={16} /> Months
+                            </>
+                          )}
+                        </Button>
+                      ) : group.fees[0].status === "paid" ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => openEdit(group.fees[0])}
                         >
                           <Pencil size={14} />
                           Edit
                         </Button>
-                      ) : snoozed ? (
+                      ) : isSnoozed(group.fees[0]) ? (
                         <Button
                           size="sm"
                           variant="secondary"
-                          onClick={() => unsnooze(fee)}
+                          onClick={() => unsnooze(group.fees[0])}
                         >
                           Bring back
                         </Button>
@@ -425,7 +489,7 @@ export default function FeesPage() {
                         <div className="flex">
                           <Button
                             size="sm"
-                            onClick={() => markFullPaid(fee)}
+                            onClick={() => markFullPaid(group.fees[0])}
                             className="rounded-r-none"
                           >
                             <Check size={15} />
@@ -433,16 +497,15 @@ export default function FeesPage() {
                           </Button>
                           <button
                             type="button"
-                            onClick={() => togglePartial(fee)}
+                            onClick={() => togglePartial(group.fees[0])}
                             className={
                               "px-2.5 rounded-r-xl flex items-center border-l border-blue-500 " +
-                              (showPartial
+                              (partialFeeId === group.fees[0].id
                                 ? "bg-blue-700 text-white"
                                 : "bg-blue-600 text-white hover:bg-blue-700")
                             }
-                            title="Partial payment"
                           >
-                            {showPartial ? (
+                            {partialFeeId === group.fees[0].id ? (
                               <ChevronUp size={16} />
                             ) : (
                               <ChevronDown size={16} />
@@ -454,23 +517,24 @@ export default function FeesPage() {
                   </div>
                 </Card>
 
-                {showSnooze && (
-                  <div className="bg-amber-50 border border-t-0 border-amber-100 rounded-b-2xl px-4 py-3">
+                {/* Snooze all months for this student */}
+                {showSnoozeAll && (
+                  <div className="bg-amber-50 border border-t-0 border-amber-100 px-4 py-3 rounded-b-2xl">
                     <p className="text-xs text-slate-600 mb-2">
-                      Hide from “Needs attention” for a while
+                      Hide all pending months for this student
                     </p>
                     <div className="flex gap-2 flex-wrap">
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => doSnooze(fee, 3)}
+                        onClick={() => snoozeAllPending(group, 3)}
                       >
                         3 days
                       </Button>
                       <Button
                         size="sm"
                         variant="secondary"
-                        onClick={() => doSnooze(fee, 7)}
+                        onClick={() => snoozeAllPending(group, 7)}
                       >
                         1 week
                       </Button>
@@ -485,21 +549,24 @@ export default function FeesPage() {
                   </div>
                 )}
 
-                {showPartial && (
+                {/* Single-month partial expand */}
+                {!multi && partialFeeId === group.fees[0].id && (
                   <div className="bg-blue-50/80 border border-t-0 border-blue-100 rounded-b-2xl px-4 py-3">
                     <form
-                      onSubmit={(e) => savePartial(fee, e)}
+                      onSubmit={(e) => savePartial(group.fees[0], e)}
                       className="space-y-2"
                     >
                       <p className="text-xs text-slate-600">
-                        Partial · remaining {formatCurrency(due)}
+                        Partial · remaining{" "}
+                        {formatCurrency(
+                          group.fees[0].amount - group.fees[0].paidAmount
+                        )}
                       </p>
                       <div className="flex gap-2 items-center">
                         <Input
                           type="number"
                           inputMode="numeric"
                           min={1}
-                          max={due}
                           value={payAmount}
                           onChange={(e) => setPayAmount(e.target.value)}
                           placeholder="₹ amount"
@@ -519,6 +586,127 @@ export default function FeesPage() {
                         </Button>
                       </div>
                     </form>
+                  </div>
+                )}
+
+                {/* Multi-month breakdown */}
+                {multi && expanded && !showSnoozeAll && (
+                  <div className="border border-t-0 border-slate-200 rounded-b-2xl overflow-hidden bg-slate-50/80">
+                    {group.fees.map((fee, idx) => {
+                      const due = fee.amount - fee.paidAmount;
+                      const days = daysFor(fee);
+                      const showPartial = partialFeeId === fee.id;
+                      const isLast = idx === group.fees.length - 1;
+
+                      return (
+                        <div
+                          key={fee.id}
+                          className={
+                            "px-4 py-3 " +
+                            (!isLast ? "border-b border-slate-100" : "")
+                          }
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-slate-800">
+                                {fee.month}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {formatCurrency(due > 0 ? due : fee.amount)}
+                                {fee.status === "paid"
+                                  ? " · paid"
+                                  : days > 0
+                                  ? " · " + daysPendingLabel(days)
+                                  : fee.status === "partial"
+                                  ? " · partial"
+                                  : ""}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <Badge variant={statusVariant(fee.status)}>
+                                {fee.status === "paid"
+                                  ? "Paid"
+                                  : fee.status === "partial"
+                                  ? "Partial"
+                                  : "Pending"}
+                              </Badge>
+                              {fee.status === "paid" ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openEdit(fee)}
+                                >
+                                  <Pencil size={14} />
+                                </Button>
+                              ) : isSnoozed(fee) ? (
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => unsnooze(fee)}
+                                >
+                                  Back
+                                </Button>
+                              ) : (
+                                <div className="flex">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => markFullPaid(fee)}
+                                    className="rounded-r-none"
+                                  >
+                                    <Check size={14} />
+                                    Paid
+                                  </Button>
+                                  <button
+                                    type="button"
+                                    onClick={() => togglePartial(fee)}
+                                    className={
+                                      "px-2 rounded-r-xl flex items-center border-l border-blue-500 " +
+                                      (showPartial
+                                        ? "bg-blue-700 text-white"
+                                        : "bg-blue-600 text-white")
+                                    }
+                                  >
+                                    {showPartial ? (
+                                      <ChevronUp size={14} />
+                                    ) : (
+                                      <ChevronDown size={14} />
+                                    )}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {showPartial && (
+                            <form
+                              onSubmit={(e) => savePartial(fee, e)}
+                              className="mt-2 flex gap-2 items-center"
+                            >
+                              <Input
+                                type="number"
+                                inputMode="numeric"
+                                min={1}
+                                value={payAmount}
+                                onChange={(e) => setPayAmount(e.target.value)}
+                                placeholder="₹ received"
+                                className="flex-1 bg-white"
+                                autoFocus
+                              />
+                              <Button type="submit" size="sm">
+                                Save
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={closePartial}
+                              >
+                                Cancel
+                              </Button>
+                            </form>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
