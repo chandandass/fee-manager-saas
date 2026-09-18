@@ -17,21 +17,50 @@ let students: Student[] = [
   { id: "s2", name: "Priya Patel", phone: "9123456780", batchId: "b1", monthlyFee: 1500, joinedAt: "2025-07-15", feeStartDay: 15, isActive: true },
   { id: "s3", name: "Amit Kumar", phone: "9988776655", batchId: "b2", monthlyFee: 2000, joinedAt: "2025-08-01", feeStartDay: 1, isActive: true },
   { id: "s4", name: "Sneha Reddy", phone: "9765432109", parentPhone: "9765432108", batchId: "b2", monthlyFee: 2000, joinedAt: "2025-09-01", feeStartDay: 5, isActive: true },
+  { id: "s5", name: "Vikram Singh", phone: "9811122233", batchId: "b1", monthlyFee: 1500, joinedAt: "2025-05-01", feeStartDay: 1, isActive: true },
 ];
 
 let batches: Batch[] = [
-  { id: "b1", name: "Class 10 - Maths", subject: "Mathematics", teacherName: "Mr. Verma", schedule: "Mon, Wed, Fri 5-6 PM", monthlyFeeDefault: 1500, studentCount: 2, isActive: true },
+  { id: "b1", name: "Class 10 - Maths", subject: "Mathematics", teacherName: "Mr. Verma", schedule: "Mon, Wed, Fri 5-6 PM", monthlyFeeDefault: 1500, studentCount: 3, isActive: true },
   { id: "b2", name: "Class 12 - Physics", subject: "Physics", teacherName: "Mrs. Iyer", schedule: "Tue, Thu, Sat 6-7 PM", monthlyFeeDefault: 2000, studentCount: 2, isActive: true },
 ];
 
-const currentMonth = new Date().toISOString().slice(0, 7);
+/** Relative months for realistic overdue testing */
+function monthOffset(offset: number): string {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + offset);
+  return d.toISOString().slice(0, 7);
+}
+
+const m0 = monthOffset(0);   // current
+const m1 = monthOffset(-1);  // last month
+const m2 = monthOffset(-2);  // 2 months ago
+const m3 = monthOffset(-3);  // 3 months ago
 
 let fees: FeeRecord[] = [
-  { id: "f1", studentId: "s1", studentName: "Rahul Sharma", batchId: "b1", month: currentMonth, amount: 1500, paidAmount: 1500, status: "paid", paidAt: new Date().toISOString() },
-  { id: "f2", studentId: "s2", studentName: "Priya Patel", batchId: "b1", month: currentMonth, amount: 1500, paidAmount: 0, status: "pending" },
-  { id: "f3", studentId: "s3", studentName: "Amit Kumar", batchId: "b2", month: currentMonth, amount: 2000, paidAmount: 1000, status: "partial" },
-  { id: "f4", studentId: "s4", studentName: "Sneha Reddy", batchId: "b2", month: currentMonth, amount: 2000, paidAmount: 0, status: "pending" },
+  // Rahul — current paid (single card)
+  { id: "f1", studentId: "s1", studentName: "Rahul Sharma", batchId: "b1", month: m0, amount: 1500, paidAmount: 1500, status: "paid", paidAt: new Date().toISOString() },
+
+  // Priya — 3 months pending → multi card (total ₹4500)
+  { id: "f2a", studentId: "s2", studentName: "Priya Patel", batchId: "b1", month: m2, amount: 1500, paidAmount: 0, status: "pending" },
+  { id: "f2b", studentId: "s2", studentName: "Priya Patel", batchId: "b1", month: m1, amount: 1500, paidAmount: 0, status: "pending" },
+  { id: "f2c", studentId: "s2", studentName: "Priya Patel", batchId: "b1", month: m0, amount: 1500, paidAmount: 0, status: "pending" },
+
+  // Amit — 2 months: one partial + one pending → multi card
+  { id: "f3a", studentId: "s3", studentName: "Amit Kumar", batchId: "b2", month: m1, amount: 2000, paidAmount: 0, status: "pending" },
+  { id: "f3b", studentId: "s3", studentName: "Amit Kumar", batchId: "b2", month: m0, amount: 2000, paidAmount: 1000, status: "partial" },
+
+  // Sneha — current only pending (single card)
+  { id: "f4", studentId: "s4", studentName: "Sneha Reddy", batchId: "b2", month: m0, amount: 2000, paidAmount: 0, status: "pending" },
+
+  // Vikram — 3 months mix (pending, partial, pending) → multi card
+  { id: "f5a", studentId: "s5", studentName: "Vikram Singh", batchId: "b1", month: m3, amount: 1500, paidAmount: 0, status: "pending" },
+  { id: "f5b", studentId: "s5", studentName: "Vikram Singh", batchId: "b1", month: m2, amount: 1500, paidAmount: 500, status: "partial" },
+  { id: "f5c", studentId: "s5", studentName: "Vikram Singh", batchId: "b1", month: m1, amount: 1500, paidAmount: 0, status: "pending" },
 ];
+
+const currentMonth = m0;
 
 let attendance: AttendanceRecord[] = [];
 
