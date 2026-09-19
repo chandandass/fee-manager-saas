@@ -4,11 +4,11 @@ import {
   getPayUConfig,
 } from "@/infrastructure/payments/payu";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
+import {
+  issueSubscriptionToken,
+  SUBSCRIPTION_COOKIE,
+} from "@/infrastructure/auth/subscriptionToken";
 
-/**
- * PayU redirects here (POST) after payment.
- * Verify reverse hash → activate plan immediately → redirect to Settings.
- */
 export async function POST(req: NextRequest) {
   const config = getPayUConfig();
   const appUrl = config.appUrl;
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     const firstname = String(formData.get("firstname") || "");
     const email = String(formData.get("email") || "");
     const hash = String(formData.get("hash") || "");
-    const udf1 = String(formData.get("udf1") || "");
+    const udf1 = String(formData.get("udf1") || "inst1");
     const udf2 = String(formData.get("udf2") || "");
     const udf3 = String(formData.get("udf3") || "");
     const udf4 = String(formData.get("udf4") || "");
@@ -46,15 +46,9 @@ export async function POST(req: NextRequest) {
     });
 
     const valid = hash.toLowerCase() === expected.toLowerCase();
-    const paidOk =
-      valid && (status.toLowerCase() === "success");
+    const paidOk = valid && status.toLowerCase() === "success";
 
     if (!paidOk) {
-      console.warn("[payu] success callback rejected", {
-        status,
-        valid,
-        txnid,
-      });
       const q = new URLSearchParams({
         payment: valid ? "failed" : "invalid",
         txnid,
@@ -62,7 +56,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.redirect(`${appUrl}/settings?${q.toString()}`, 303);
     }
 
-    // Payment verified → unlock plan now (30 days from today)
     const ends = new Date();
     ends.setDate(ends.getDate() + 30);
 
@@ -73,19 +66,28 @@ export async function POST(req: NextRequest) {
       subscriptionEndsAt: ends.toISOString(),
     });
 
-    console.log("[payu] plan activated", {
+    const token = issueSubscriptionToken({
+      instituteId: udf1 || "inst1",
+      plan: "basic",
+      accessUntil: ends,
+    });
+
+    console.log("[payu] plan activated + jwt issued", {
       txnid,
-      amount,
       mihpayid,
-      instituteId: udf1,
       until: ends.toISOString().slice(0, 10),
     });
 
-    const q = new URLSearchParams({
-      payment: "success",
-      txnid,
+    const q = new URLSearchParams({ payment: "success", txnid });
+    const res = NextResponse.redirect(`${appUrl}/settings?${q.toString()}`, 303);
+    res.cookies.set(SUBSCRIPTION_COOKIE, token, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      secure: process.env.NODE_ENV === "production",
+      expires: ends,
     });
-    return NextResponse.redirect(`${appUrl}/settings?${q.toString()}`, 303);
+    return res;
   } catch (e) {
     console.error("[payu/success]", e);
     return NextResponse.redirect(`${appUrl}/settings?payment=error`, 303);
