@@ -16,9 +16,16 @@ import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageStudents } from "@/domain/use-cases/ManageStudents";
 import { Student, Batch } from "@/domain/entities/Student";
 import { Plus, Search, Phone, MessageCircle, Pencil } from "lucide-react";
+import { useSubscription } from "@/presentation/hooks/useSubscription";
+import {
+  BlurLockRow,
+  LockedRowsHint,
+  PlanExpiredBanner,
+} from "@/presentation/components/SubscriptionGate";
 
 const repos = createRepositories();
 const manageStudents = new ManageStudents(repos.students);
+const PREVIEW_COUNT = 3;
 
 const defaultFeeDay = Math.min(28, new Date().getDate());
 
@@ -32,6 +39,9 @@ const emptyForm = {
 };
 
 export default function StudentsPage() {
+  const { active: planActive, loading: subLoading } = useSubscription();
+  const locked = !subLoading && !planActive;
+
   const [students, setStudents] = useState<Student[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [search, setSearch] = useState("");
@@ -75,12 +85,14 @@ export default function StudentsPage() {
   }
 
   function openCreate() {
+    if (locked) return;
     setEditing(null);
     setForm(emptyForm);
     setShowForm(true);
   }
 
   function openEdit(s: Student) {
+    if (locked) return;
     setEditing(s);
     setForm({
       name: s.name,
@@ -101,6 +113,7 @@ export default function StudentsPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (locked) return;
     if (!form.name || !form.phone || !form.batchId) return;
     const feeStartDay = Math.min(
       28,
@@ -147,12 +160,14 @@ export default function StudentsPage() {
         title="Students"
         subtitle={students.length + " total"}
         action={
-          <Button size="sm" onClick={openCreate}>
+          <Button size="sm" onClick={openCreate} disabled={locked}>
             <Plus size={16} />
             Add
           </Button>
         }
       />
+
+      <PlanExpiredBanner show={locked} />
 
       <div className="relative">
         <Search
@@ -211,9 +226,6 @@ export default function StudentsPage() {
               value={form.monthlyFee}
               onChange={(e) => setForm({ ...form, monthlyFee: e.target.value })}
             />
-            <p className="text-xs text-slate-500 mt-1">
-              Auto-filled from batch when adding. Change if needed.
-            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -231,9 +243,6 @@ export default function StudentsPage() {
                 </option>
               ))}
             </Select>
-            <p className="text-xs text-slate-500 mt-1.5">
-              e.g. joined on 15th → choose 15th.
-            </p>
           </div>
           <Button type="submit" className="w-full" size="lg">
             {editing ? "Save changes" : "Save Student"}
@@ -246,59 +255,72 @@ export default function StudentsPage() {
           title="No students yet"
           description="Add your first student to start tracking fees."
           action={
-            <Button size="sm" onClick={openCreate}>
+            <Button size="sm" onClick={openCreate} disabled={locked}>
               <Plus size={16} /> Add Student
             </Button>
           }
         />
       ) : (
         <div className="space-y-2">
-          {filtered.map((s) => (
-            <Card key={s.id} className="!p-3.5">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm truncate">{s.name}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {batchName(s.batchId)}
-                    {" · Fee on "}{dayOfMonthLabel(s.feeStartDay || 1)}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">{s.phone}</p>
-                </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
-                  <p className="text-sm font-semibold">
-                    {formatCurrency(s.monthlyFee)}
-                  </p>
-                  <div className="flex gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(s)}
-                      className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 hover:bg-slate-200"
-                      title="Edit"
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    <IconButton
-                      href={"tel:+91" + s.phone.replace(/\D/g, "").slice(-10)}
-                      variant="call"
-                      title="Call"
-                    >
-                      <Phone size={16} />
-                    </IconButton>
-                    <IconButton
-                      href={
-                        "https://wa.me/91" +
-                        s.phone.replace(/\D/g, "").slice(-10)
-                      }
-                      variant="whatsapp"
-                      title="WhatsApp"
-                    >
-                      <MessageCircle size={16} />
-                    </IconButton>
+          {filtered.map((s, index) => {
+            const rowLocked = locked && index >= PREVIEW_COUNT;
+            const card = (
+              <Card key={s.id} className="!p-3.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm truncate">{s.name}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {batchName(s.batchId)}
+                      {" · Fee on "}{dayOfMonthLabel(s.feeStartDay || 1)}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-1">{s.phone}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <p className="text-sm font-semibold">
+                      {formatCurrency(s.monthlyFee)}
+                    </p>
+                    {!rowLocked && (
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openEdit(s)}
+                          className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          title="Edit"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <IconButton
+                          href={
+                            "tel:+91" + s.phone.replace(/\D/g, "").slice(-10)
+                          }
+                          variant="call"
+                          title="Call"
+                        >
+                          <Phone size={16} />
+                        </IconButton>
+                        <IconButton
+                          href={
+                            "https://wa.me/91" +
+                            s.phone.replace(/\D/g, "").slice(-10)
+                          }
+                          variant="whatsapp"
+                          title="WhatsApp"
+                        >
+                          <MessageCircle size={16} />
+                        </IconButton>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+            return (
+              <BlurLockRow key={s.id} locked={rowLocked}>
+                {card}
+              </BlurLockRow>
+            );
+          })}
+          <LockedRowsHint show={locked && filtered.length > PREVIEW_COUNT} />
         </div>
       )}
     </div>
