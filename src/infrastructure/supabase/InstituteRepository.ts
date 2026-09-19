@@ -1,9 +1,9 @@
-import { Institute } from "@/domain/entities/Student";
+import { Institute, DashboardStats } from "@/domain/entities/Student";
 import { IInstituteRepository } from "@/domain/repositories/IInstituteRepository";
-import { DashboardStats } from "@/domain/entities/Student";
 import { getSupabaseAdmin, isSupabaseConfigured } from "./client";
 
-const DEMO_INSTITUTE_ID = "a0000000-0000-4000-8000-000000000001";
+/** Fixed seed id from schema.sql — V1 single-tenant until Auth */
+export const DEMO_INSTITUTE_ID = "a0000000-0000-4000-8000-000000000001";
 
 function mapRow(row: Record<string, unknown>): Institute {
   return {
@@ -12,9 +12,7 @@ function mapRow(row: Record<string, unknown>): Institute {
     ownerName: String(row.owner_name),
     phone: String(row.phone),
     plan: row.plan as Institute["plan"],
-    trialEndsAt: row.trial_ends_at
-      ? String(row.trial_ends_at)
-      : undefined,
+    trialEndsAt: row.trial_ends_at ? String(row.trial_ends_at) : undefined,
     subscriptionEndsAt: row.subscription_ends_at
       ? String(row.subscription_ends_at)
       : undefined,
@@ -35,7 +33,6 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
 
     if (error) throw error;
     if (!data) {
-      // Fallback create
       const trialEnds = new Date();
       trialEnds.setDate(trialEnds.getDate() + 7);
       const { data: created, error: cErr } = await sb
@@ -69,9 +66,8 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
     if (data.subscriptionEndsAt !== undefined) {
       patch.subscription_ends_at = data.subscriptionEndsAt;
     }
-    // Clear trial when upgrading
     if (data.plan === "basic" || data.plan === "pro") {
-      if (data.trialEndsAt === undefined) patch.trial_ends_at = null;
+      patch.trial_ends_at = null;
     }
 
     const { data: row, error } = await sb
@@ -128,7 +124,6 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
 }
 
 export async function activateInstitutePlan(params: {
-  instituteId?: string;
   txnid: string;
   mihpayid?: string;
   amount?: string;
@@ -139,11 +134,11 @@ export async function activateInstitutePlan(params: {
     throw new Error("Supabase not configured");
   }
   const sb = getSupabaseAdmin();
-  const id = params.instituteId || DEMO_INSTITUTE_ID;
   const days = params.days ?? 30;
   const ends = new Date();
   ends.setDate(ends.getDate() + days);
 
+  // Always demo institute in V1 (udf1 may be old "inst1")
   const { error: upErr } = await sb
     .from("institutes")
     .update({
@@ -152,17 +147,17 @@ export async function activateInstitutePlan(params: {
       subscription_ends_at: ends.toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq("id", id);
+    .eq("id", DEMO_INSTITUTE_ID);
 
   if (upErr) throw upErr;
 
   await sb.from("payment_events").insert({
-    institute_id: id,
+    institute_id: DEMO_INSTITUTE_ID,
     txnid: params.txnid,
     mihpayid: params.mihpayid || null,
     amount: params.amount || null,
     status: params.status || "success",
   });
 
-  return { accessUntil: ends };
+  return { accessUntil: ends, instituteId: DEMO_INSTITUTE_ID };
 }
