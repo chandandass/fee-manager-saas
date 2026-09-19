@@ -27,8 +27,7 @@ function PaymentBanner() {
   if (payment === "success") {
     return (
       <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-3 text-sm text-green-900">
-        Payment successful (₹249). Plan activation will sync once billing is
-        fully connected to your account.
+        Payment successful. Your plan is active for 30 days.
       </div>
     );
   }
@@ -42,7 +41,8 @@ function PaymentBanner() {
   if (payment === "invalid" || payment === "error") {
     return (
       <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-950">
-        Could not verify payment. Contact support with your transaction id.
+        Could not verify payment. If money was deducted, contact support with
+        your transaction id.
       </div>
     );
   }
@@ -54,9 +54,28 @@ function SettingsContent() {
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState("");
 
+  async function refresh() {
+    const inst = await repos.institute.getCurrent();
+    setInstitute(inst);
+  }
+
   useEffect(() => {
-    repos.institute.getCurrent().then(setInstitute);
+    refresh();
   }, []);
+
+  // Reload plan after PayU redirect
+  const params = useSearchParams();
+  useEffect(() => {
+    if (params.get("payment") === "success") {
+      refresh();
+    }
+  }, [params]);
+
+  const isPaid =
+    institute &&
+    (institute.plan === "basic" || institute.plan === "pro") &&
+    institute.subscriptionEndsAt &&
+    new Date(institute.subscriptionEndsAt) > new Date();
 
   async function startPayU() {
     if (!institute) return;
@@ -138,19 +157,40 @@ function SettingsContent() {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium">Current Plan</p>
-              <div className="flex items-center gap-2 mt-0.5">
-                <Badge variant="info">
-                  {institute.plan === "trial" ? "7-Day Trial" : institute.plan}
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <Badge variant={isPaid ? "success" : "info"}>
+                  {isPaid
+                    ? "Basic (Active)"
+                    : institute.plan === "trial"
+                    ? "7-Day Trial"
+                    : institute.plan}
                 </Badge>
                 <span className="text-xs text-slate-500">₹249/month</span>
               </div>
             </div>
           </div>
-          <Button size="sm" onClick={startPayU} disabled={paying}>
-            {paying ? "Redirecting…" : "Pay ₹249"}
-          </Button>
+          {!isPaid ? (
+            <Button size="sm" onClick={startPayU} disabled={paying}>
+              {paying ? "Redirecting…" : "Pay ₹249"}
+            </Button>
+          ) : (
+            <Button size="sm" variant="secondary" onClick={startPayU} disabled={paying}>
+              {paying ? "Redirecting…" : "Renew"}
+            </Button>
+          )}
         </div>
-        {institute.trialEndsAt && (
+
+        {isPaid && institute.subscriptionEndsAt && (
+          <p className="text-xs text-green-700 mt-3">
+            Active until{" "}
+            {new Date(institute.subscriptionEndsAt).toLocaleDateString("en-IN", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })}
+          </p>
+        )}
+        {!isPaid && institute.trialEndsAt && (
           <p className="text-xs text-slate-500 mt-3">
             Trial ends:{" "}
             {new Date(institute.trialEndsAt).toLocaleDateString("en-IN", {
@@ -163,9 +203,6 @@ function SettingsContent() {
         {payError && (
           <p className="text-xs text-red-600 mt-2">{payError}</p>
         )}
-        <p className="text-xs text-slate-400 mt-2">
-          Secure checkout via PayU · set keys in .env for test/live
-        </p>
       </Card>
 
       <div className="space-y-1">
@@ -183,7 +220,9 @@ function SettingsContent() {
             <CreditCard size={18} className="text-slate-500" />
             <span className="text-sm font-medium">Billing via PayU</span>
           </div>
-          <Badge variant="info">₹249</Badge>
+          <Badge variant={isPaid ? "success" : "info"}>
+            {isPaid ? "Active" : "₹249"}
+          </Badge>
         </div>
       </div>
 

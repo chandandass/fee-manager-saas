@@ -3,11 +3,11 @@ import {
   generateReverseHash,
   getPayUConfig,
 } from "@/infrastructure/payments/payu";
+import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 
 /**
- * PayU redirects here (POST) after successful payment.
- * Validates reverse hash, then redirects user to Settings with success flag.
- * TODO: persist subscriptionEndsAt in DB when Supabase is wired.
+ * PayU redirects here (POST) after payment.
+ * Verify reverse hash → activate plan immediately → redirect to Settings.
  */
 export async function POST(req: NextRequest) {
   const config = getPayUConfig();
@@ -46,23 +46,43 @@ export async function POST(req: NextRequest) {
     });
 
     const valid = hash.toLowerCase() === expected.toLowerCase();
-    const success =
-      valid && (status === "success" || status === "Success");
+    const paidOk =
+      valid && (status.toLowerCase() === "success");
 
-    if (success) {
-      // Placeholder: log until real persistence
-      console.log("[payu] payment ok", { txnid, amount, mihpayid, udf1 });
-      // TODO: update institute plan to basic, set subscriptionEndsAt = now + 30 days
-    } else {
-      console.warn("[payu] success callback hash/status invalid", {
+    if (!paidOk) {
+      console.warn("[payu] success callback rejected", {
         status,
         valid,
         txnid,
       });
+      const q = new URLSearchParams({
+        payment: valid ? "failed" : "invalid",
+        txnid,
+      });
+      return NextResponse.redirect(`${appUrl}/settings?${q.toString()}`, 303);
     }
 
+    // Payment verified → unlock plan now (30 days from today)
+    const ends = new Date();
+    ends.setDate(ends.getDate() + 30);
+
+    const repos = createRepositories();
+    await repos.institute.update({
+      plan: "basic",
+      trialEndsAt: undefined,
+      subscriptionEndsAt: ends.toISOString(),
+    });
+
+    console.log("[payu] plan activated", {
+      txnid,
+      amount,
+      mihpayid,
+      instituteId: udf1,
+      until: ends.toISOString().slice(0, 10),
+    });
+
     const q = new URLSearchParams({
-      payment: success ? "success" : "invalid",
+      payment: "success",
       txnid,
     });
     return NextResponse.redirect(`${appUrl}/settings?${q.toString()}`, 303);
