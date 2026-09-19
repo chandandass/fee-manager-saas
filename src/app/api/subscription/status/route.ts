@@ -5,13 +5,10 @@ import {
   issueSubscriptionToken,
   type PlanType,
 } from "@/infrastructure/auth/subscriptionToken";
+import { isSupabaseConfigured } from "@/infrastructure/supabase/client";
+import { SupabaseInstituteRepository } from "@/infrastructure/supabase/InstituteRepository";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 
-/**
- * GET /api/subscription/status
- * Reads cookie JWT (or rebuilds from in-memory institute for demo).
- * Returns whether app features should be fully unlocked.
- */
 export async function GET(req: NextRequest) {
   const cookie = req.cookies.get(SUBSCRIPTION_COOKIE)?.value;
   const verified = verifySubscriptionToken(cookie);
@@ -25,48 +22,52 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Fallback: institute record (trial) — issue token if still valid
-  const repos = createRepositories();
-  const institute = await repos.institute.getCurrent();
+  try {
+    const institute = isSupabaseConfigured()
+      ? await new SupabaseInstituteRepository().getCurrent()
+      : await createRepositories().institute.getCurrent();
 
-  let accessUntil: Date | null = null;
-  let plan: PlanType = "expired";
+    let accessUntil: Date | null = null;
+    let plan: PlanType = "expired";
 
-  if (
-    institute.subscriptionEndsAt &&
-    new Date(institute.subscriptionEndsAt) > new Date()
-  ) {
-    accessUntil = new Date(institute.subscriptionEndsAt);
-    plan = institute.plan === "pro" ? "pro" : "basic";
-  } else if (
-    institute.plan === "trial" &&
-    institute.trialEndsAt &&
-    new Date(institute.trialEndsAt) > new Date()
-  ) {
-    accessUntil = new Date(institute.trialEndsAt);
-    plan = "trial";
-  }
+    if (
+      institute.subscriptionEndsAt &&
+      new Date(institute.subscriptionEndsAt) > new Date()
+    ) {
+      accessUntil = new Date(institute.subscriptionEndsAt);
+      plan = institute.plan === "pro" ? "pro" : "basic";
+    } else if (
+      institute.plan === "trial" &&
+      institute.trialEndsAt &&
+      new Date(institute.trialEndsAt) > new Date()
+    ) {
+      accessUntil = new Date(institute.trialEndsAt);
+      plan = "trial";
+    }
 
-  if (accessUntil) {
-    const token = issueSubscriptionToken({
-      instituteId: institute.id,
-      plan,
-      accessUntil,
-    });
-    const res = NextResponse.json({
-      active: true,
-      plan,
-      accessUntil: accessUntil.toISOString(),
-      source: "institute",
-    });
-    res.cookies.set(SUBSCRIPTION_COOKIE, token, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      secure: process.env.NODE_ENV === "production",
-      expires: accessUntil,
-    });
-    return res;
+    if (accessUntil) {
+      const token = issueSubscriptionToken({
+        instituteId: institute.id,
+        plan,
+        accessUntil,
+      });
+      const res = NextResponse.json({
+        active: true,
+        plan,
+        accessUntil: accessUntil.toISOString(),
+        source: isSupabaseConfigured() ? "supabase" : "memory",
+      });
+      res.cookies.set(SUBSCRIPTION_COOKIE, token, {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        expires: accessUntil,
+      });
+      return res;
+    }
+  } catch (e) {
+    console.error("[subscription/status]", e);
   }
 
   return NextResponse.json({

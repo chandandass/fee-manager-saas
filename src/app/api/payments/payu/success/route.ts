@@ -3,11 +3,13 @@ import {
   generateReverseHash,
   getPayUConfig,
 } from "@/infrastructure/payments/payu";
-import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import {
   issueSubscriptionToken,
   SUBSCRIPTION_COOKIE,
 } from "@/infrastructure/auth/subscriptionToken";
+import { isSupabaseConfigured } from "@/infrastructure/supabase/client";
+import { activateInstitutePlan } from "@/infrastructure/supabase/InstituteRepository";
+import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 
 export async function POST(req: NextRequest) {
   const config = getPayUConfig();
@@ -22,7 +24,7 @@ export async function POST(req: NextRequest) {
     const firstname = String(formData.get("firstname") || "");
     const email = String(formData.get("email") || "");
     const hash = String(formData.get("hash") || "");
-    const udf1 = String(formData.get("udf1") || "inst1");
+    const udf1 = String(formData.get("udf1") || "");
     const udf2 = String(formData.get("udf2") || "");
     const udf3 = String(formData.get("udf3") || "");
     const udf4 = String(formData.get("udf4") || "");
@@ -56,26 +58,49 @@ export async function POST(req: NextRequest) {
       return NextResponse.redirect(`${appUrl}/settings?${q.toString()}`, 303);
     }
 
-    const ends = new Date();
-    ends.setDate(ends.getDate() + 30);
+    let accessUntil = new Date();
+    accessUntil.setDate(accessUntil.getDate() + 30);
 
-    const repos = createRepositories();
-    await repos.institute.update({
-      plan: "basic",
-      trialEndsAt: undefined,
-      subscriptionEndsAt: ends.toISOString(),
-    });
+    if (isSupabaseConfigured()) {
+      try {
+        const result = await activateInstitutePlan({
+          instituteId: udf1 || undefined,
+          txnid,
+          mihpayid,
+          amount,
+          status,
+          days: 30,
+        });
+        accessUntil = result.accessUntil;
+      } catch (e) {
+        console.error("[payu] supabase activate failed, fallback memory", e);
+        const repos = createRepositories();
+        await repos.institute.update({
+          plan: "basic",
+          trialEndsAt: undefined,
+          subscriptionEndsAt: accessUntil.toISOString(),
+        });
+      }
+    } else {
+      const repos = createRepositories();
+      await repos.institute.update({
+        plan: "basic",
+        trialEndsAt: undefined,
+        subscriptionEndsAt: accessUntil.toISOString(),
+      });
+    }
 
     const token = issueSubscriptionToken({
-      instituteId: udf1 || "inst1",
+      instituteId: udf1 || "a0000000-0000-4000-8000-000000000001",
       plan: "basic",
-      accessUntil: ends,
+      accessUntil,
     });
 
-    console.log("[payu] plan activated + jwt issued", {
+    console.log("[payu] plan activated", {
       txnid,
       mihpayid,
-      until: ends.toISOString().slice(0, 10),
+      until: accessUntil.toISOString().slice(0, 10),
+      supabase: isSupabaseConfigured(),
     });
 
     const q = new URLSearchParams({ payment: "success", txnid });
@@ -85,7 +110,7 @@ export async function POST(req: NextRequest) {
       sameSite: "lax",
       path: "/",
       secure: process.env.NODE_ENV === "production",
-      expires: ends,
+      expires: accessUntil,
     });
     return res;
   } catch (e) {
