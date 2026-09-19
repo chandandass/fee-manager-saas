@@ -6,7 +6,7 @@ export function getPayUConfig() {
   const key = process.env.PAYU_MERCHANT_KEY || "";
   const salt = process.env.PAYU_MERCHANT_SALT || "";
   const mode = (process.env.PAYU_MODE || "test") as PayUMode;
-  const amount = process.env.PAYU_PLAN_AMOUNT || "499";
+  const amount = process.env.PAYU_PLAN_AMOUNT || "249";
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
   return {
@@ -26,7 +26,6 @@ export function getPayUConfig() {
 /**
  * Payment hash (server-only):
  * sha512(key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5||||||SALT)
- * @see https://docs.payu.in/docs/hash-generation
  */
 export function generatePaymentHash(params: {
   key: string;
@@ -81,7 +80,7 @@ export function generatePaymentHash(params: {
 }
 
 /**
- * Reverse hash from PayU response (validate on success/failure):
+ * Reverse hash from PayU response:
  * sha512(SALT|status||||||udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key)
  */
 export function generateReverseHash(params: {

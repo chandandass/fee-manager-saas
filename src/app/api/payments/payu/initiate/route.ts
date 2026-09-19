@@ -7,8 +7,7 @@ import {
 
 /**
  * POST /api/payments/payu/initiate
- * Body: { firstname, email, phone }
- * Returns PayU form fields + paymentUrl for client-side POST redirect.
+ * Body: { firstname, email, phone, instituteId? }
  */
 export async function POST(req: NextRequest) {
   try {
@@ -26,13 +25,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json().catch(() => ({}));
     const firstname = String(body.firstname || "Teacher").slice(0, 60);
     const email = String(body.email || "teacher@example.com").slice(0, 100);
-    const phone = String(body.phone || "9999999999").replace(/\D/g, "").slice(-10);
+    const phone = String(body.phone || "9999999999")
+      .replace(/\D/g, "")
+      .slice(-10);
 
     const txnid = createTxnId();
     const amount = Number(config.amount).toFixed(2);
-    const productinfo = "FeeManager Basic - 1 month";
-
-    // udf1 = institute id (placeholder until auth)
+    const productinfo = "FeeManager - 1 month";
     const udf1 = String(body.instituteId || "inst1");
 
     const hash = generatePaymentHash({

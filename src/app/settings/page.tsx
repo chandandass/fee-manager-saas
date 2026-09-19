@@ -27,8 +27,8 @@ function PaymentBanner() {
   if (payment === "success") {
     return (
       <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-3 text-sm text-green-900">
-        Payment successful. Your plan will activate once we confirm (check
-        PayU dashboard in test mode).
+        Payment successful (₹249). Plan activation will sync once billing is
+        fully connected to your account.
       </div>
     );
   }
@@ -80,7 +80,6 @@ function SettingsContent() {
         return;
       }
 
-      // Hosted checkout: build and submit form to PayU
       const form = document.createElement("form");
       form.method = "POST";
       form.action = data.paymentUrl;
@@ -143,11 +142,12 @@ function SettingsContent() {
                 <Badge variant="info">
                   {institute.plan === "trial" ? "7-Day Trial" : institute.plan}
                 </Badge>
+                <span className="text-xs text-slate-500">₹249/month</span>
               </div>
             </div>
           </div>
           <Button size="sm" onClick={startPayU} disabled={paying}>
-            {paying ? "Redirecting…" : "Pay ₹499"}
+            {paying ? "Redirecting…" : "Pay ₹249"}
           </Button>
         </div>
         {institute.trialEndsAt && (
@@ -164,7 +164,7 @@ function SettingsContent() {
           <p className="text-xs text-red-600 mt-2">{payError}</p>
         )}
         <p className="text-xs text-slate-400 mt-2">
-          PayU test/live · needs keys in .env (see .env.example)
+          Secure checkout via PayU · set keys in .env for test/live
         </p>
       </Card>
 
@@ -183,7 +183,7 @@ function SettingsContent() {
             <CreditCard size={18} className="text-slate-500" />
             <span className="text-sm font-medium">Billing via PayU</span>
           </div>
-          <Badge variant="info">Branch</Badge>
+          <Badge variant="info">₹249</Badge>
         </div>
       </div>
 

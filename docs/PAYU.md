@@ -1,44 +1,47 @@
 # PayU integration (FeeManager subscription)
 
-Branch: `feature/payu-integration`
+Branch: `feature/payu-integration`  
+Price: **₹249 / month**
 
 ## Purpose
 
-Teachers pay **you** ₹499/month for FeeManager via **PayU Hosted Checkout**.
-This is **not** for collecting student tuition from parents.
+Teachers pay **you** for FeeManager via PayU Hosted Checkout.  
+Not for collecting student tuition from parents.
 
 ## Setup
 
-1. Create merchant account at PayU India and get **Key** + **Salt** (test first).
-2. Copy `.env.example` → `.env.local`:
-
 ```env
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-PAYU_MERCHANT_KEY=your_key
-PAYU_MERCHANT_SALT=your_salt
+NEXT_PUBLIC_APP_URL=https://your-domain.com
+PAYU_MERCHANT_KEY=...
+PAYU_MERCHANT_SALT=...
 PAYU_MODE=test
-PAYU_PLAN_AMOUNT=499
+PAYU_PLAN_AMOUNT=249
 ```
 
-3. For local success/failure callbacks, use a tunnel (ngrok) and set `NEXT_PUBLIC_APP_URL` to that HTTPS URL so PayU can redirect back.
+### Test vs real (live)
+
+| | Test | Live (real money) |
+|--|------|-------------------|
+| Keys | Test key/salt from PayU | **Live** key/salt after KYC |
+| `PAYU_MODE` | `test` | `live` |
+| URL | test.payu.in | secure.payu.in |
+| Money | Fake / sandbox | Real UPI/cards |
+
+**Code path is the same.** Switch env to live only after PayU approves go-live.
+
+Local callbacks: use ngrok HTTPS as `NEXT_PUBLIC_APP_URL`.
 
 ## Flow
 
-1. Settings → **Pay ₹499**
-2. `POST /api/payments/payu/initiate` builds hash (server-side) + form fields
-3. Browser POSTs to `https://test.payu.in/_payment` (or live)
-4. PayU redirects to `/api/payments/payu/success` or `/failure`
-5. We validate reverse hash → redirect to `/settings?payment=success|failed`
+1. Settings → **Pay ₹249**
+2. Server hash → POST to PayU
+3. Success/failure → verify reverse hash → Settings banner
 
-## Still TODO before production
+## Production checklist
 
-- [ ] Persist plan + `subscriptionEndsAt` (Supabase)
-- [ ] Real institute email in initiate payload
-- [ ] PayU webhook (surl can miss if user closes browser)
-- [ ] Idempotent txn handling
-- [ ] Live KYC / go-live on PayU dashboard
-
-## Security
-
-- **Salt never in client code** — only API routes
-- Always verify reverse hash on success
+- [ ] PayU KYC complete
+- [ ] Live key + salt in host secrets (Vercel/etc.)
+- [ ] `PAYU_MODE=live`
+- [ ] Public HTTPS app URL
+- [ ] Persist plan in DB on success
+- [ ] Webhook as backup
