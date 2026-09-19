@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   PageHeader,
   Card,
@@ -18,12 +19,87 @@ import {
 
 const repos = createRepositories();
 
-export default function SettingsPage() {
+function PaymentBanner() {
+  const params = useSearchParams();
+  const payment = params.get("payment");
+  if (!payment) return null;
+
+  if (payment === "success") {
+    return (
+      <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-3 text-sm text-green-900">
+        Payment successful. Your plan will activate once we confirm (check
+        PayU dashboard in test mode).
+      </div>
+    );
+  }
+  if (payment === "failed") {
+    return (
+      <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-900">
+        Payment failed or cancelled. You can try again anytime.
+      </div>
+    );
+  }
+  if (payment === "invalid" || payment === "error") {
+    return (
+      <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-950">
+        Could not verify payment. Contact support with your transaction id.
+      </div>
+    );
+  }
+  return null;
+}
+
+function SettingsContent() {
   const [institute, setInstitute] = useState<Institute | null>(null);
+  const [paying, setPaying] = useState(false);
+  const [payError, setPayError] = useState("");
 
   useEffect(() => {
     repos.institute.getCurrent().then(setInstitute);
   }, []);
+
+  async function startPayU() {
+    if (!institute) return;
+    setPaying(true);
+    setPayError("");
+    try {
+      const res = await fetch("/api/payments/payu/initiate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstname: institute.ownerName,
+          phone: institute.phone,
+          email: "owner@example.com",
+          instituteId: institute.id,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPayError(data.error || "Payment init failed");
+        setPaying(false);
+        return;
+      }
+
+      // Hosted checkout: build and submit form to PayU
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = data.paymentUrl;
+      Object.entries(data.fields as Record<string, string>).forEach(
+        ([name, value]) => {
+          const input = document.createElement("input");
+          input.type = "hidden";
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        }
+      );
+      document.body.appendChild(form);
+      form.submit();
+    } catch {
+      setPayError("Network error. Try again.");
+      setPaying(false);
+    }
+  }
 
   if (!institute) {
     return (
@@ -37,6 +113,10 @@ export default function SettingsPage() {
   return (
     <div className="p-4 space-y-5">
       <PageHeader title="Settings" subtitle="Institute & subscription" />
+
+      <Suspense fallback={null}>
+        <PaymentBanner />
+      </Suspense>
 
       <Card>
         <div className="flex items-center gap-3">
@@ -52,12 +132,12 @@ export default function SettingsPage() {
       </Card>
 
       <Card>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
               <Sparkles size={18} className="text-amber-600" />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-medium">Current Plan</p>
               <div className="flex items-center gap-2 mt-0.5">
                 <Badge variant="info">
@@ -66,7 +146,9 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
-          <Button size="sm">Upgrade</Button>
+          <Button size="sm" onClick={startPayU} disabled={paying}>
+            {paying ? "Redirecting…" : "Pay ₹499"}
+          </Button>
         </div>
         {institute.trialEndsAt && (
           <p className="text-xs text-slate-500 mt-3">
@@ -78,22 +160,30 @@ export default function SettingsPage() {
             })}
           </p>
         )}
+        {payError && (
+          <p className="text-xs text-red-600 mt-2">{payError}</p>
+        )}
+        <p className="text-xs text-slate-400 mt-2">
+          PayU test/live · needs keys in .env (see .env.example)
+        </p>
       </Card>
 
       <div className="space-y-1">
         <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 opacity-60">
           <div className="flex items-center gap-3">
             <Bell size={18} className="text-slate-500" />
-            <span className="text-sm font-medium">Fee Reminders / Notifications</span>
+            <span className="text-sm font-medium">
+              Fee Reminders / Notifications
+            </span>
           </div>
           <Badge variant="default">Soon</Badge>
         </div>
-        <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 opacity-60">
+        <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200">
           <div className="flex items-center gap-3">
             <CreditCard size={18} className="text-slate-500" />
-            <span className="text-sm font-medium">Billing & Payments</span>
+            <span className="text-sm font-medium">Billing via PayU</span>
           </div>
-          <Badge variant="default">Soon</Badge>
+          <Badge variant="info">Branch</Badge>
         </div>
       </div>
 
@@ -101,5 +191,20 @@ export default function SettingsPage() {
         FeeManager v0.1 · Built for Indian coaching centres
       </p>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-4 animate-pulse">
+          <div className="h-8 bg-slate-200 rounded w-32 mb-4" />
+          <div className="h-40 bg-slate-200 rounded-2xl" />
+        </div>
+      }
+    >
+      <SettingsContent />
+    </Suspense>
   );
 }
