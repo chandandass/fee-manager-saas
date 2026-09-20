@@ -19,17 +19,15 @@ import {
 import { useSubscription } from "@/presentation/hooks/useSubscription";
 
 const repos = createRepositories();
-const LOCAL_PLAN_KEY = "fm_plan_active_until";
 
 function PaymentBanner() {
   const params = useSearchParams();
   const payment = params.get("payment");
   if (!payment) return null;
-
   if (payment === "success") {
     return (
       <div className="rounded-xl bg-green-50 border border-green-100 px-4 py-3 text-sm text-green-900">
-        Payment successful. Your Basic plan is active for 30 days.
+        Payment successful. Basic plan is active for 30 days.
       </div>
     );
   }
@@ -43,8 +41,8 @@ function PaymentBanner() {
   if (payment === "invalid" || payment === "error") {
     return (
       <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-950">
-        Could not verify payment with PayU. If money was deducted, check PayU
-        dashboard or contact support with your transaction id.
+        Could not verify payment. If money was deducted, contact support with
+        your transaction id.
       </div>
     );
   }
@@ -64,75 +62,38 @@ function SettingsContent() {
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState("");
-  /** Client backup when server memory resets after redirect */
-  const [localUntil, setLocalUntil] = useState<string | null>(null);
+
+  async function refreshInstitute() {
+    const inst = await repos.institute.getCurrent();
+    setInstitute(inst);
+  }
 
   useEffect(() => {
-    repos.institute.getCurrent().then(setInstitute);
-    try {
-      const raw = localStorage.getItem(LOCAL_PLAN_KEY);
-      if (raw && new Date(raw) > new Date()) setLocalUntil(raw);
-    } catch {
-      /* ignore */
-    }
+    refreshInstitute();
   }, []);
 
-  // After PayU success redirect: remember access locally + refresh JWT status
   useEffect(() => {
     if (params.get("payment") === "success") {
-      const ends = new Date();
-      ends.setDate(ends.getDate() + 30);
-      const iso = ends.toISOString();
-      try {
-        localStorage.setItem(LOCAL_PLAN_KEY, iso);
-      } catch {
-        /* ignore */
-      }
-      setLocalUntil(iso);
       refreshSub();
-      repos.institute.getCurrent().then(setInstitute);
+      refreshInstitute();
     }
   }, [params, refreshSub]);
 
-  const isPaid =
-    subActive &&
-    (subPlan === "basic" || subPlan === "pro" || subPlan === "trial"
-      ? subPlan !== "trial"
-        ? true
-        : false
-      : false) ||
-    (localUntil !== null && new Date(localUntil) > new Date()) ||
-    Boolean(
-      institute?.subscriptionEndsAt &&
-        new Date(institute.subscriptionEndsAt) > new Date() &&
-        (institute.plan === "basic" || institute.plan === "pro")
-    );
+  const isBasic =
+    (institute?.plan === "basic" || institute?.plan === "pro") &&
+    institute.subscriptionEndsAt &&
+    new Date(institute.subscriptionEndsAt) > new Date();
 
-  // Simpler isPaid:
-  const planActive =
-    (subActive && subPlan !== "expired" && subPlan !== "trial") ||
-    (subActive && subPlan === "basic") ||
-    (subActive && subPlan === "pro") ||
-    (localUntil && new Date(localUntil) > new Date()) ||
-    (institute?.plan === "basic" &&
-      institute.subscriptionEndsAt &&
-      new Date(institute.subscriptionEndsAt) > new Date()) ||
-    (institute?.plan === "pro" &&
-      institute.subscriptionEndsAt &&
-      new Date(institute.subscriptionEndsAt) > new Date());
-
-  // Paid subscription (not mere trial)
-  const showAsBasic =
-    planActive &&
-    (subPlan === "basic" ||
-      subPlan === "pro" ||
-      Boolean(localUntil) ||
-      institute?.plan === "basic" ||
-      institute?.plan === "pro");
+  const isTrial =
+    !isBasic &&
+    ((subActive && subPlan === "trial") ||
+      (institute?.plan === "trial" &&
+        institute.trialEndsAt &&
+        new Date(institute.trialEndsAt) > new Date()));
 
   const accessLabel =
+    (isBasic && institute?.subscriptionEndsAt) ||
     subUntil ||
-    localUntil ||
     institute?.subscriptionEndsAt ||
     null;
 
@@ -157,7 +118,6 @@ function SettingsContent() {
         setPaying(false);
         return;
       }
-
       const form = document.createElement("form");
       form.method = "POST";
       form.action = data.paymentUrl;
@@ -217,10 +177,10 @@ function SettingsContent() {
             <div className="min-w-0">
               <p className="text-sm font-medium">Current Plan</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <Badge variant={showAsBasic ? "success" : "info"}>
-                  {showAsBasic
+                <Badge variant={isBasic ? "success" : isTrial ? "info" : "danger"}>
+                  {isBasic
                     ? "Basic (Active)"
-                    : subActive && subPlan === "trial"
+                    : isTrial
                     ? "7-Day Trial"
                     : "Expired"}
                 </Badge>
@@ -228,7 +188,7 @@ function SettingsContent() {
               </div>
             </div>
           </div>
-          {!showAsBasic ? (
+          {!isBasic ? (
             <Button size="sm" onClick={startPayU} disabled={paying}>
               {paying ? "Redirecting…" : "Pay ₹249"}
             </Button>
@@ -244,7 +204,7 @@ function SettingsContent() {
           )}
         </div>
 
-        {showAsBasic && accessLabel && (
+        {isBasic && accessLabel && (
           <p className="text-xs text-green-700 mt-3">
             Active until{" "}
             {new Date(accessLabel).toLocaleDateString("en-IN", {
@@ -254,7 +214,7 @@ function SettingsContent() {
             })}
           </p>
         )}
-        {!showAsBasic && institute.trialEndsAt && subPlan === "trial" && (
+        {isTrial && institute.trialEndsAt && (
           <p className="text-xs text-slate-500 mt-3">
             Trial ends:{" "}
             {new Date(institute.trialEndsAt).toLocaleDateString("en-IN", {
@@ -282,8 +242,8 @@ function SettingsContent() {
             <CreditCard size={18} className="text-slate-500" />
             <span className="text-sm font-medium">Billing via PayU</span>
           </div>
-          <Badge variant={showAsBasic ? "success" : "info"}>
-            {showAsBasic ? "Active" : "₹249"}
+          <Badge variant={isBasic ? "success" : "info"}>
+            {isBasic ? "Active" : "₹249"}
           </Badge>
         </div>
       </div>

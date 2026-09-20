@@ -13,7 +13,7 @@ import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { GetDashboardStats } from "@/domain/use-cases/GetDashboardStats";
 import { ManageFees } from "@/domain/use-cases/ManageFees";
-import { DashboardStats, FeeRecord, Student } from "@/domain/entities/Student";
+import { DashboardStats, FeeRecord, Student, Institute } from "@/domain/entities/Student";
 import {
   MessageCircle,
   Phone,
@@ -24,26 +24,69 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { whatsappService } from "@/infrastructure/whatsapp/WhatsAppService";
+import { useSubscription } from "@/presentation/hooks/useSubscription";
 
 const repos = createRepositories();
 const getStats = new GetDashboardStats(repos.institute);
 const manageFees = new ManageFees(repos.fees);
 
+function PlanBadge({
+  institute,
+  subPlan,
+  subActive,
+  subUntil,
+}: {
+  institute: Institute | null;
+  subPlan: string;
+  subActive: boolean;
+  subUntil: string | null;
+}) {
+  const fromDb =
+    institute &&
+    (institute.plan === "basic" || institute.plan === "pro") &&
+    institute.subscriptionEndsAt &&
+    new Date(institute.subscriptionEndsAt) > new Date();
+
+  const paid =
+    fromDb ||
+    (subActive && (subPlan === "basic" || subPlan === "pro"));
+
+  if (paid) {
+    return <Badge variant="success">Basic</Badge>;
+  }
+  if (subActive && subPlan === "trial") {
+    return <Badge variant="info">Trial</Badge>;
+  }
+  if (
+    institute?.plan === "trial" &&
+    institute.trialEndsAt &&
+    new Date(institute.trialEndsAt) > new Date()
+  ) {
+    return <Badge variant="info">Trial</Badge>;
+  }
+  return <Badge variant="danger">Expired</Badge>;
+}
+
 export default function DashboardPage() {
+  const { active: subActive, plan: subPlan, accessUntil: subUntil } =
+    useSubscription();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [pending, setPending] = useState<FeeRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [institute, setInstitute] = useState<Institute | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      const [s, p, studs] = await Promise.all([
+      const [s, p, studs, inst] = await Promise.all([
         getStats.execute(),
         manageFees.getPending(),
         repos.students.getAll(),
+        repos.institute.getCurrent(),
       ]);
       setStats(s);
       setStudents(studs);
+      setInstitute(inst);
       const feeDayMap = Object.fromEntries(
         studs.map((st) => [st.id, st.feeStartDay || 1])
       );
@@ -85,8 +128,15 @@ export default function DashboardPage() {
     <div className="p-4 space-y-5">
       <PageHeader
         title="Home"
-        subtitle="Sharma Tuition Centre"
-        action={<Badge variant="info">Trial</Badge>}
+        subtitle={institute?.name || "FeeManager"}
+        action={
+          <PlanBadge
+            institute={institute}
+            subPlan={subPlan}
+            subActive={subActive}
+            subUntil={subUntil}
+          />
+        }
       />
 
       {pending.length > 0 ? (
@@ -236,7 +286,8 @@ export default function DashboardPage() {
                                 studentName: fee.studentName,
                                 amount: dueAmt,
                                 month: fee.month,
-                                instituteName: "Sharma Tuition Centre",
+                                instituteName:
+                                  institute?.name || "Tuition Centre",
                               })
                             }
                             variant="whatsapp"
