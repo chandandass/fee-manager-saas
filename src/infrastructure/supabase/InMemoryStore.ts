@@ -25,7 +25,6 @@ let batches: Batch[] = [
   { id: "b2", name: "Class 12 - Physics", subject: "Physics", teacherName: "Mrs. Iyer", schedule: "Tue, Thu, Sat 6-7 PM", monthlyFeeDefault: 2000, studentCount: 2, isActive: true },
 ];
 
-/** Relative months for realistic overdue testing */
 function monthOffset(offset: number): string {
   const d = new Date();
   d.setDate(1);
@@ -33,35 +32,25 @@ function monthOffset(offset: number): string {
   return d.toISOString().slice(0, 7);
 }
 
-const m0 = monthOffset(0);   // current
-const m1 = monthOffset(-1);  // last month
-const m2 = monthOffset(-2);  // 2 months ago
-const m3 = monthOffset(-3);  // 3 months ago
+const m0 = monthOffset(0);
+const m1 = monthOffset(-1);
+const m2 = monthOffset(-2);
+const m3 = monthOffset(-3);
 
 let fees: FeeRecord[] = [
-  // Rahul — current paid (single card)
   { id: "f1", studentId: "s1", studentName: "Rahul Sharma", batchId: "b1", month: m0, amount: 1500, paidAmount: 1500, status: "paid", paidAt: new Date().toISOString() },
-
-  // Priya — 3 months pending → multi card (total ₹4500)
   { id: "f2a", studentId: "s2", studentName: "Priya Patel", batchId: "b1", month: m2, amount: 1500, paidAmount: 0, status: "pending" },
   { id: "f2b", studentId: "s2", studentName: "Priya Patel", batchId: "b1", month: m1, amount: 1500, paidAmount: 0, status: "pending" },
   { id: "f2c", studentId: "s2", studentName: "Priya Patel", batchId: "b1", month: m0, amount: 1500, paidAmount: 0, status: "pending" },
-
-  // Amit — 2 months: one partial + one pending → multi card
   { id: "f3a", studentId: "s3", studentName: "Amit Kumar", batchId: "b2", month: m1, amount: 2000, paidAmount: 0, status: "pending" },
   { id: "f3b", studentId: "s3", studentName: "Amit Kumar", batchId: "b2", month: m0, amount: 2000, paidAmount: 1000, status: "partial" },
-
-  // Sneha — current only pending (single card)
   { id: "f4", studentId: "s4", studentName: "Sneha Reddy", batchId: "b2", month: m0, amount: 2000, paidAmount: 0, status: "pending" },
-
-  // Vikram — 3 months mix (pending, partial, pending) → multi card
   { id: "f5a", studentId: "s5", studentName: "Vikram Singh", batchId: "b1", month: m3, amount: 1500, paidAmount: 0, status: "pending" },
   { id: "f5b", studentId: "s5", studentName: "Vikram Singh", batchId: "b1", month: m2, amount: 1500, paidAmount: 500, status: "partial" },
   { id: "f5c", studentId: "s5", studentName: "Vikram Singh", batchId: "b1", month: m1, amount: 1500, paidAmount: 0, status: "pending" },
 ];
 
 const currentMonth = m0;
-
 let attendance: AttendanceRecord[] = [];
 
 let institute: Institute = {
@@ -79,8 +68,7 @@ function uid() {
 
 function isSnoozedActive(fee: FeeRecord): boolean {
   if (!fee.snoozedUntil) return false;
-  const today = new Date().toISOString().slice(0, 10);
-  return fee.snoozedUntil > today;
+  return fee.snoozedUntil > new Date().toISOString().slice(0, 10);
 }
 
 export class InMemoryStudentRepository implements IStudentRepository {
@@ -229,7 +217,7 @@ export class InMemoryInstituteRepository implements IInstituteRepository {
   }
 }
 
-export function createRepositories() {
+function createInMemoryRepositories() {
   return {
     students: new InMemoryStudentRepository(),
     batches: new InMemoryBatchRepository(),
@@ -237,4 +225,32 @@ export function createRepositories() {
     attendance: new InMemoryAttendanceRepository(),
     institute: new InMemoryInstituteRepository(),
   };
+}
+
+/** Prefer Supabase when env is set; otherwise in-memory. */
+export function createRepositories() {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { isSupabaseConfigured } = require("./client");
+    if (isSupabaseConfigured()) {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { SupabaseInstituteRepository } = require("./InstituteRepository");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { SupabaseBatchRepository } = require("./BatchRepository");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { SupabaseStudentRepository } = require("./StudentRepository");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { SupabaseFeeRepository } = require("./FeeRepository");
+      return {
+        institute: new SupabaseInstituteRepository(),
+        batches: new SupabaseBatchRepository(),
+        students: new SupabaseStudentRepository(),
+        fees: new SupabaseFeeRepository(),
+        attendance: new InMemoryAttendanceRepository(),
+      };
+    }
+  } catch (e) {
+    console.warn("[repos] Supabase unavailable, using memory", e);
+  }
+  return createInMemoryRepositories();
 }
