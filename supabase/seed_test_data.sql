@@ -1,13 +1,10 @@
--- FeeManager test seed
+-- FeeManager test seed (VALID UUIDs only — hex 0-9 a-f)
 -- Run AFTER schema.sql in Supabase SQL Editor
--- Institute id must match app DEMO_INSTITUTE_ID
 
--- Clear previous seed (safe for demo ids only)
 delete from public.fees where institute_id = 'a0000000-0000-4000-8000-000000000001';
 delete from public.students where institute_id = 'a0000000-0000-4000-8000-000000000001';
 delete from public.batches where institute_id = 'a0000000-0000-4000-8000-000000000001';
 
--- Ensure institute exists
 insert into public.institutes (id, name, owner_name, phone, plan, trial_ends_at)
 values (
   'a0000000-0000-4000-8000-000000000001',
@@ -22,7 +19,7 @@ on conflict (id) do update set
   owner_name = excluded.owner_name,
   phone = excluded.phone;
 
--- Batches
+-- Batches (b is valid hex)
 insert into public.batches (id, institute_id, name, subject, teacher_name, schedule, monthly_fee_default, is_active) values
 (
   'b0000000-0000-4000-8000-000000000001',
@@ -45,13 +42,13 @@ insert into public.batches (id, institute_id, name, subject, teacher_name, sched
   true
 );
 
--- Students
+-- Students (use c0... — do NOT use letter s)
 insert into public.students (
   id, institute_id, batch_id, name, phone, parent_phone,
   monthly_fee, fee_start_day, joined_at, is_active
 ) values
 (
-  's0000000-0000-4000-8000-000000000001',
+  'c0000000-0000-4000-8000-000000000001',
   'a0000000-0000-4000-8000-000000000001',
   'b0000000-0000-4000-8000-000000000001',
   'Rahul Sharma',
@@ -63,7 +60,7 @@ insert into public.students (
   true
 ),
 (
-  's0000000-0000-4000-8000-000000000002',
+  'c0000000-0000-4000-8000-000000000002',
   'a0000000-0000-4000-8000-000000000001',
   'b0000000-0000-4000-8000-000000000001',
   'Priya Patel',
@@ -75,7 +72,7 @@ insert into public.students (
   true
 ),
 (
-  's0000000-0000-4000-8000-000000000003',
+  'c0000000-0000-4000-8000-000000000003',
   'a0000000-0000-4000-8000-000000000001',
   'b0000000-0000-4000-8000-000000000002',
   'Amit Kumar',
@@ -87,7 +84,7 @@ insert into public.students (
   true
 ),
 (
-  's0000000-0000-4000-8000-000000000004',
+  'c0000000-0000-4000-8000-000000000004',
   'a0000000-0000-4000-8000-000000000001',
   'b0000000-0000-4000-8000-000000000002',
   'Sneha Reddy',
@@ -99,7 +96,7 @@ insert into public.students (
   true
 ),
 (
-  's0000000-0000-4000-8000-000000000005',
+  'c0000000-0000-4000-8000-000000000005',
   'a0000000-0000-4000-8000-000000000001',
   'b0000000-0000-4000-8000-000000000001',
   'Vikram Singh',
@@ -110,9 +107,6 @@ insert into public.students (
   '2025-05-01',
   true
 );
-
--- Fees: relative months (edit if you want fixed YYYY-MM)
--- Current month / -1 / -2 / -3 as text from SQL
 
 with m as (
   select
@@ -126,80 +120,74 @@ insert into public.fees (
   month, amount, paid_amount, status, paid_at
 )
 select * from (
-  -- Rahul: current paid
   select
     'f0000000-0000-4000-8000-000000000001'::uuid,
     'a0000000-0000-4000-8000-000000000001'::uuid,
-    's0000000-0000-4000-8000-000000000001'::uuid,
+    'c0000000-0000-4000-8000-000000000001'::uuid,
     'b0000000-0000-4000-8000-000000000001'::uuid,
-    'Rahul Sharma',
-    m.m0, 1500, 1500, 'paid', now()
+    'Rahul Sharma', m.m0, 1500, 1500, 'paid', now()
   from m
   union all
-  -- Priya: 3 months pending
   select
     'f0000000-0000-4000-8000-000000000002'::uuid,
     'a0000000-0000-4000-8000-000000000001'::uuid,
-    's0000000-0000-4000-8000-000000000002'::uuid,
+    'c0000000-0000-4000-8000-000000000002'::uuid,
     'b0000000-0000-4000-8000-000000000001'::uuid,
     'Priya Patel', m.m2, 1500, 0, 'pending', null from m
   union all
   select
     'f0000000-0000-4000-8000-000000000003'::uuid,
     'a0000000-0000-4000-8000-000000000001'::uuid,
-    's0000000-0000-4000-8000-000000000002'::uuid,
+    'c0000000-0000-4000-8000-000000000002'::uuid,
     'b0000000-0000-4000-8000-000000000001'::uuid,
     'Priya Patel', m.m1, 1500, 0, 'pending', null from m
   union all
   select
     'f0000000-0000-4000-8000-000000000004'::uuid,
     'a0000000-0000-4000-8000-000000000001'::uuid,
-    's0000000-0000-4000-8000-000000000002'::uuid,
+    'c0000000-0000-4000-8000-000000000002'::uuid,
     'b0000000-0000-4000-8000-000000000001'::uuid,
     'Priya Patel', m.m0, 1500, 0, 'pending', null from m
   union all
-  -- Amit: last pending + current partial
   select
     'f0000000-0000-4000-8000-000000000005'::uuid,
     'a0000000-0000-4000-8000-000000000001'::uuid,
-    's0000000-0000-4000-8000-000000000003'::uuid,
+    'c0000000-0000-4000-8000-000000000003'::uuid,
     'b0000000-0000-4000-8000-000000000002'::uuid,
     'Amit Kumar', m.m1, 2000, 0, 'pending', null from m
   union all
   select
     'f0000000-0000-4000-8000-000000000006'::uuid,
     'a0000000-0000-4000-8000-000000000001'::uuid,
-    's0000000-0000-4000-8000-000000000003'::uuid,
+    'c0000000-0000-4000-8000-000000000003'::uuid,
     'b0000000-0000-4000-8000-000000000002'::uuid,
     'Amit Kumar', m.m0, 2000, 1000, 'partial', null from m
   union all
-  -- Sneha: current pending only
   select
     'f0000000-0000-4000-8000-000000000007'::uuid,
     'a0000000-0000-4000-8000-000000000001'::uuid,
-    's0000000-0000-4000-8000-000000000004'::uuid,
+    'c0000000-0000-4000-8000-000000000004'::uuid,
     'b0000000-0000-4000-8000-000000000002'::uuid,
     'Sneha Reddy', m.m0, 2000, 0, 'pending', null from m
   union all
-  -- Vikram: 3 months mix
   select
     'f0000000-0000-4000-8000-000000000008'::uuid,
     'a0000000-0000-4000-8000-000000000001'::uuid,
-    's0000000-0000-4000-8000-000000000005'::uuid,
+    'c0000000-0000-4000-8000-000000000005'::uuid,
     'b0000000-0000-4000-8000-000000000001'::uuid,
     'Vikram Singh', m.m3, 1500, 0, 'pending', null from m
   union all
   select
     'f0000000-0000-4000-8000-000000000009'::uuid,
     'a0000000-0000-4000-8000-000000000001'::uuid,
-    's0000000-0000-4000-8000-000000000005'::uuid,
+    'c0000000-0000-4000-8000-000000000005'::uuid,
     'b0000000-0000-4000-8000-000000000001'::uuid,
     'Vikram Singh', m.m2, 1500, 500, 'partial', null from m
   union all
   select
     'f0000000-0000-4000-8000-00000000000a'::uuid,
     'a0000000-0000-4000-8000-000000000001'::uuid,
-    's0000000-0000-4000-8000-000000000005'::uuid,
+    'c0000000-0000-4000-8000-000000000005'::uuid,
     'b0000000-0000-4000-8000-000000000001'::uuid,
     'Vikram Singh', m.m1, 1500, 0, 'pending', null from m
 ) t;
