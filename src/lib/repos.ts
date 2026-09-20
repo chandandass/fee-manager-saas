@@ -1,17 +1,25 @@
 import { createRepositories as createInMemory } from "@/infrastructure/supabase/InMemoryStore";
 import { isSupabaseConfigured } from "@/infrastructure/supabase/client";
 import { SupabaseInstituteRepository } from "@/infrastructure/supabase/InstituteRepository";
+import { SupabaseBatchRepository } from "@/infrastructure/supabase/BatchRepository";
+import { SupabaseStudentRepository } from "@/infrastructure/supabase/StudentRepository";
+import { SupabaseFeeRepository } from "@/infrastructure/supabase/FeeRepository";
 
 /**
- * App-wide repositories.
- * Institute → Supabase when configured (plan persists).
- * Students / batches / fees → still in-memory until migrated.
+ * Single entry for all app data access.
+ * When Supabase env is set → full DB.
+ * Otherwise → in-memory (local demo without keys).
  */
 export function createRepositories() {
-  const memory = createInMemory();
-  if (!isSupabaseConfigured()) return memory;
+  if (!isSupabaseConfigured()) {
+    return createInMemory();
+  }
+
   return {
-    ...memory,
     institute: new SupabaseInstituteRepository(),
+    batches: new SupabaseBatchRepository(),
+    students: new SupabaseStudentRepository(),
+    fees: new SupabaseFeeRepository(),
+    attendance: createInMemory().attendance,
   };
 }
