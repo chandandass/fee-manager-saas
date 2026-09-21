@@ -9,12 +9,18 @@ export function getSupabaseBrowser() {
     throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
   }
   if (!browserClient) {
-    browserClient = createClient(url, key);
+    browserClient = createClient(url, key, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    });
   }
   return browserClient;
 }
 
-/** Server-only: PayU success, plan updates. Never import in client components. */
+/** Server-only: PayU / plan / admin writes. Never import in client components. */
 export function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key =
