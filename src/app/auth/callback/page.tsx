@@ -7,11 +7,6 @@ import {
   isSupabaseConfigured,
 } from "@/infrastructure/supabase/client";
 
-/**
- * Handles both:
- * - PKCE: ?code=...
- * - Implicit: #access_token=... (what you hit)
- */
 export default function AuthCallbackPage() {
   const router = useRouter();
   const [message, setMessage] = useState("Signing you in…");
@@ -28,15 +23,17 @@ export default function AuthCallbackPage() {
       const sb = getSupabaseBrowser();
 
       try {
-        // 1) PKCE code in query
         const qs = new URLSearchParams(window.location.search);
         const code = qs.get("code");
+
         if (code) {
           const { error } = await sb.auth.exchangeCodeForSession(code);
-          if (error) throw error;
+          if (error) {
+            console.error("exchangeCodeForSession", error);
+            throw error;
+          }
         } else {
-          // 2) Tokens in hash (implicit) — parse and setSession
-          const hash = window.location.hash?.replace(/^#/, "");
+          const hash = window.location.hash?.replace(/^#/, "") || "";
           if (hash) {
             const hp = new URLSearchParams(hash);
             const access_token = hp.get("access_token");
@@ -51,15 +48,23 @@ export default function AuthCallbackPage() {
           }
         }
 
+        // Give storage a tick
+        await new Promise((r) => setTimeout(r, 50));
+
         const { data, error: sessErr } = await sb.auth.getSession();
         if (sessErr) throw sessErr;
+
         if (!data.session?.user) {
-          setMessage("No session found. Try again.");
-          setTimeout(() => router.replace("/login?error=session"), 1500);
-          return;
+          // Retry once — sometimes session lands slightly later
+          await new Promise((r) => setTimeout(r, 300));
+          const again = await sb.auth.getSession();
+          if (!again.data.session?.user) {
+            throw new Error("No session after OAuth");
+          }
         }
 
-        const user = data.session.user;
+        const session = (await sb.auth.getSession()).data.session!;
+        const user = session.user;
         const email = user.email || "";
         const name =
           (user.user_metadata?.full_name as string) ||
@@ -67,33 +72,35 @@ export default function AuthCallbackPage() {
           email.split("@")[0] ||
           "Teacher";
 
-        // Ensure institute exists (first-time teacher)
+        // Ensure institute row; learn if onboarding needed
+        let needsOnboarding = true;
         try {
-          await fetch("/api/auth/ensure-institute", {
+          const res = await fetch("/api/auth/ensure-institute", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               userId: user.id,
               email,
               name,
-              accessToken: data.session.access_token,
             }),
           });
-        } catch {
-          /* non-blocking */
+          const json = await res.json();
+          needsOnboarding = Boolean(json.needsOnboarding);
+        } catch (e) {
+          console.warn("ensure-institute", e);
+          needsOnboarding = true;
         }
 
-        // Clean URL (remove tokens from address bar)
         window.history.replaceState({}, "", "/auth/callback");
-        if (!cancelled) {
-          setMessage("Welcome! Redirecting…");
-          router.replace("/");
-        }
+
+        if (cancelled) return;
+        setMessage("Welcome! Redirecting…");
+        router.replace(needsOnboarding ? "/onboarding" : "/");
       } catch (e) {
         console.error("[auth/callback]", e);
         if (!cancelled) {
-          setMessage("Sign-in failed. Redirecting…");
-          setTimeout(() => router.replace("/login?error=callback"), 1200);
+          setMessage("Sign-in failed. Try again…");
+          setTimeout(() => router.replace("/login?error=callback"), 1500);
         }
       }
     }
