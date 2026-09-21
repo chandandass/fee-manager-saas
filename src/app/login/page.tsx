@@ -1,25 +1,53 @@
 "use client";
 
-import { useState } from "react";
-import { getSupabaseBrowser, isSupabaseConfigured } from "@/infrastructure/supabase/client";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  getSupabaseBrowser,
+  isSupabaseConfigured,
+} from "@/infrastructure/supabase/client";
+import { Suspense } from "react";
 
-export default function LoginPage() {
+function LoginInner() {
+  const router = useRouter();
+  const params = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // If Google sent tokens to /login by mistake, recover them
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    if (hash.includes("access_token")) {
+      // Move handling to callback page so URL is cleaned
+      window.location.replace("/auth/callback" + hash);
+      return;
+    }
+
+    const sb = getSupabaseBrowser();
+    sb.auth.getSession().then(({ data }) => {
+      if (data.session) router.replace("/");
+    });
+  }, [router]);
+
+  useEffect(() => {
+    const err = params.get("error");
+    if (err === "auth" || err === "callback" || err === "session") {
+      setError("Sign-in did not finish. Please try Google again.");
+    }
+  }, [params]);
 
   async function signInWithGoogle() {
     setError("");
     if (!isSupabaseConfigured()) {
-      setError("Supabase is not configured. Add URL and anon key in .env.local");
+      setError("Supabase is not configured. Check .env.local");
       return;
     }
     setLoading(true);
     try {
       const sb = getSupabaseBrowser();
-      const origin =
-        typeof window !== "undefined"
-          ? window.location.origin
-          : process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+      const origin = window.location.origin;
 
       const { error: oauthError } = await sb.auth.signInWithOAuth({
         provider: "google",
@@ -36,7 +64,6 @@ export default function LoginPage() {
         setError(oauthError.message);
         setLoading(false);
       }
-      // Browser redirects to Google — no need to setLoading false
     } catch (e) {
       setError(e instanceof Error ? e.message : "Login failed");
       setLoading(false);
@@ -65,7 +92,7 @@ export default function LoginPage() {
             Teacher sign in
           </p>
           <p className="text-xs text-slate-500 text-center">
-            First time? Use Google — we create your centre automatically.
+            First time? Use Google — we set up your centre automatically.
           </p>
 
           <button
@@ -88,6 +115,20 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">
+          Loading…
+        </div>
+      }
+    >
+      <LoginInner />
+    </Suspense>
   );
 }
 

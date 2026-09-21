@@ -14,13 +14,13 @@ export function getSupabaseBrowser() {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
+        flowType: "pkce",
       },
     });
   }
   return browserClient;
 }
 
-/** Server-only: PayU / plan / admin writes. Never import in client components. */
 export function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key =
