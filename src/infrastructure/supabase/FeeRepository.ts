@@ -1,7 +1,7 @@
 import { FeeRecord, FeeStatus } from "@/domain/entities/Student";
 import { IFeeRepository } from "@/domain/repositories/IFeeRepository";
 import { getSupabaseAdmin } from "./client";
-import { DEMO_INSTITUTE_ID } from "./InstituteRepository";
+import { getActiveInstituteId } from "./instituteContext";
 
 function mapFee(row: Record<string, unknown>): FeeRecord {
   return {
@@ -29,7 +29,10 @@ function isSnoozedActive(fee: FeeRecord): boolean {
 export class SupabaseFeeRepository implements IFeeRepository {
   async getAll(month?: string): Promise<FeeRecord[]> {
     const sb = getSupabaseAdmin();
-    let q = sb.from("fees").select("*").eq("institute_id", DEMO_INSTITUTE_ID);
+    let q = sb
+      .from("fees")
+      .select("*")
+      .eq("institute_id", getActiveInstituteId());
     if (month) q = q.eq("month", month);
     const { data, error } = await q.order("month", { ascending: false });
     if (error) throw error;
@@ -88,10 +91,11 @@ export class SupabaseFeeRepository implements IFeeRepository {
 
   async createMonthlyFees(month: string): Promise<FeeRecord[]> {
     const sb = getSupabaseAdmin();
+    const instituteId = getActiveInstituteId();
     const { data: existing } = await sb
       .from("fees")
       .select("id")
-      .eq("institute_id", DEMO_INSTITUTE_ID)
+      .eq("institute_id", instituteId)
       .eq("month", month)
       .limit(1);
     if (existing && existing.length > 0) {
@@ -101,12 +105,12 @@ export class SupabaseFeeRepository implements IFeeRepository {
     const { data: students, error: sErr } = await sb
       .from("students")
       .select("*")
-      .eq("institute_id", DEMO_INSTITUTE_ID)
+      .eq("institute_id", instituteId)
       .eq("is_active", true);
     if (sErr) throw sErr;
 
     const rows = (students || []).map((s) => ({
-      institute_id: DEMO_INSTITUTE_ID,
+      institute_id: instituteId,
       student_id: s.id,
       batch_id: s.batch_id,
       student_name: s.name,

@@ -1,7 +1,7 @@
 import { Student } from "@/domain/entities/Student";
 import { IStudentRepository } from "@/domain/repositories/IStudentRepository";
 import { getSupabaseAdmin } from "./client";
-import { DEMO_INSTITUTE_ID } from "./InstituteRepository";
+import { getActiveInstituteId } from "./instituteContext";
 
 function mapStudent(row: Record<string, unknown>): Student {
   return {
@@ -24,7 +24,7 @@ export class SupabaseStudentRepository implements IStudentRepository {
     const { data, error } = await sb
       .from("students")
       .select("*")
-      .eq("institute_id", DEMO_INSTITUTE_ID)
+      .eq("institute_id", getActiveInstituteId())
       .order("name");
     if (error) throw error;
     return (data || []).map(mapStudent);
@@ -53,7 +53,7 @@ export class SupabaseStudentRepository implements IStudentRepository {
     const { data: row, error } = await sb
       .from("students")
       .insert({
-        institute_id: DEMO_INSTITUTE_ID,
+        institute_id: getActiveInstituteId(),
         batch_id: data.batchId || null,
         name: data.name,
         phone: data.phone,

@@ -1,7 +1,7 @@
 import { Batch } from "@/domain/entities/Student";
 import { IBatchRepository } from "@/domain/repositories/IBatchRepository";
 import { getSupabaseAdmin } from "./client";
-import { DEMO_INSTITUTE_ID } from "./InstituteRepository";
+import { getActiveInstituteId } from "./instituteContext";
 
 function mapBatch(row: Record<string, unknown>, studentCount = 0): Batch {
   return {
@@ -19,17 +19,18 @@ function mapBatch(row: Record<string, unknown>, studentCount = 0): Batch {
 export class SupabaseBatchRepository implements IBatchRepository {
   async getAll(): Promise<Batch[]> {
     const sb = getSupabaseAdmin();
+    const instituteId = getActiveInstituteId();
     const { data, error } = await sb
       .from("batches")
       .select("*")
-      .eq("institute_id", DEMO_INSTITUTE_ID)
+      .eq("institute_id", instituteId)
       .order("name");
     if (error) throw error;
 
     const { data: students } = await sb
       .from("students")
       .select("batch_id")
-      .eq("institute_id", DEMO_INSTITUTE_ID)
+      .eq("institute_id", instituteId)
       .eq("is_active", true);
 
     const counts: Record<string, number> = {};
@@ -58,7 +59,7 @@ export class SupabaseBatchRepository implements IBatchRepository {
     const { data, error } = await sb
       .from("batches")
       .insert({
-        institute_id: DEMO_INSTITUTE_ID,
+        institute_id: getActiveInstituteId(),
         name: batch.name,
         subject: batch.subject || null,
         teacher_name: batch.teacherName || null,
