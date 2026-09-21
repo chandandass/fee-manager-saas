@@ -5,8 +5,9 @@ import {
 } from "@/infrastructure/supabase/client";
 
 /**
- * Create or fetch institute for this Google user.
- * needsOnboarding = true when name is still default or phone empty (first setup).
+ * One institute per Google user.
+ * - New Gmail → create empty trial institute → needsOnboarding: true
+ * - Existing → return their institute only (never the demo seed)
  */
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
@@ -38,7 +39,6 @@ export async function POST(req: NextRequest) {
 
     if (findErr) {
       console.error("[ensure-institute] find", findErr);
-      // Migration missing owner_user_id?
       return NextResponse.json({
         ok: false,
         needsOnboarding: true,
@@ -47,19 +47,27 @@ export async function POST(req: NextRequest) {
     }
 
     if (existing) {
-      const placeholder =
+      const incomplete =
         !existing.name ||
-        existing.name.endsWith("'s Tuition") ||
+        String(existing.name).trim() === "" ||
+        String(existing.name).endsWith("'s Tuition") ||
         !existing.phone ||
         String(existing.phone).trim() === "";
+
       return NextResponse.json({
         ok: true,
         instituteId: existing.id,
         created: false,
-        needsOnboarding: placeholder,
+        // Phone optional: only force onboarding if name still placeholder
+        needsOnboarding:
+          !existing.name ||
+          String(existing.name).trim() === "" ||
+          String(existing.name).endsWith("'s Tuition"),
+        incomplete,
       });
     }
 
+    // Brand-new Google account → own blank institute (NOT demo data)
     const trialEnds = new Date();
     trialEnds.setDate(trialEnds.getDate() + 7);
 
@@ -74,7 +82,7 @@ export async function POST(req: NextRequest) {
         trial_ends_at: trialEnds.toISOString(),
         owner_user_id: userId,
       })
-      .select("id, name, phone")
+      .select("id")
       .single();
 
     if (error) {

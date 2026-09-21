@@ -37,7 +37,7 @@ export default function OnboardingPage() {
         (u.user_metadata?.name as string) ||
         "";
       setOwnerName(n);
-      if (n) setInstituteName(`${n.split(" ")[0]}'s Tuition`);
+      setInstituteName(""); // force teacher to type real centre name
       setLoading(false);
     })();
   }, [router]);
@@ -67,6 +67,13 @@ export default function OnboardingPage() {
         setSaving(false);
         return;
       }
+      if (json.institute?.id) {
+        try {
+          localStorage.setItem("fm_institute_id", json.institute.id);
+        } catch {
+          /* ignore */
+        }
+      }
       router.replace("/");
     } catch {
       setError("Network error. Try again.");
@@ -88,7 +95,7 @@ export default function OnboardingPage() {
         <div className="text-center space-y-1">
           <h1 className="text-xl font-bold text-slate-900">Set up your centre</h1>
           <p className="text-sm text-slate-500">
-            One minute — then you can add students and track fees.
+            New account — tell us your tuition name. Phone is optional.
           </p>
         </div>
 
@@ -116,12 +123,14 @@ export default function OnboardingPage() {
               onChange={(e) => setInstituteName(e.target.value)}
               placeholder="e.g. Sharma Tuition Centre"
               required
+              autoFocus
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Phone <span className="text-slate-400 font-normal">(optional)</span>
+              Phone{" "}
+              <span className="text-slate-400 font-normal">(optional)</span>
             </label>
             <Input
               value={phone}
@@ -129,9 +138,6 @@ export default function OnboardingPage() {
               placeholder="10-digit mobile"
               inputMode="tel"
             />
-            <p className="text-xs text-slate-400 mt-1">
-              Useful later for WhatsApp reminders from your number.
-            </p>
           </div>
 
           {error && <p className="text-xs text-red-600">{error}</p>}

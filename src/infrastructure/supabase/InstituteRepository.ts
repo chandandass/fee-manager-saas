@@ -2,15 +2,27 @@ import { Institute, DashboardStats } from "@/domain/entities/Student";
 import { IInstituteRepository } from "@/domain/repositories/IInstituteRepository";
 import { getSupabaseAdmin, isSupabaseConfigured } from "./client";
 
-/** Fixed seed id from schema.sql — V1 single-tenant until Auth */
+/** Legacy demo seed — only used when no logged-in institute id */
 export const DEMO_INSTITUTE_ID = "a0000000-0000-4000-8000-000000000001";
+
+function activeInstituteId(): string {
+  if (typeof window !== "undefined") {
+    try {
+      const id = localStorage.getItem("fm_institute_id");
+      if (id) return id;
+    } catch {
+      /* ignore */
+    }
+  }
+  return DEMO_INSTITUTE_ID;
+}
 
 function mapRow(row: Record<string, unknown>): Institute {
   return {
     id: String(row.id),
     name: String(row.name),
     ownerName: String(row.owner_name),
-    phone: String(row.phone),
+    phone: String(row.phone || ""),
     plan: row.plan as Institute["plan"],
     trialEndsAt: row.trial_ends_at ? String(row.trial_ends_at) : undefined,
     subscriptionEndsAt: row.subscription_ends_at
@@ -25,36 +37,24 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
       throw new Error("Supabase not configured");
     }
     const sb = getSupabaseAdmin();
+    const id = activeInstituteId();
+
     const { data, error } = await sb
       .from("institutes")
       .select("*")
-      .eq("id", DEMO_INSTITUTE_ID)
+      .eq("id", id)
       .maybeSingle();
 
     if (error) throw error;
     if (!data) {
-      const trialEnds = new Date();
-      trialEnds.setDate(trialEnds.getDate() + 7);
-      const { data: created, error: cErr } = await sb
-        .from("institutes")
-        .upsert({
-          id: DEMO_INSTITUTE_ID,
-          name: "Sharma Tuition Centre",
-          owner_name: "Ramesh Sharma",
-          phone: "9876500000",
-          plan: "trial",
-          trial_ends_at: trialEnds.toISOString(),
-        })
-        .select("*")
-        .single();
-      if (cErr) throw cErr;
-      return mapRow(created);
+      throw new Error("Institute not found — sign in again");
     }
     return mapRow(data);
   }
 
   async update(data: Partial<Institute>): Promise<Institute> {
     const sb = getSupabaseAdmin();
+    const id = activeInstituteId();
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -73,7 +73,7 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
     const { data: row, error } = await sb
       .from("institutes")
       .update(patch)
-      .eq("id", DEMO_INSTITUTE_ID)
+      .eq("id", id)
       .select("*")
       .single();
 
@@ -83,7 +83,7 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
 
   async getDashboardStats(): Promise<DashboardStats> {
     const sb = getSupabaseAdmin();
-    const instituteId = DEMO_INSTITUTE_ID;
+    const instituteId = activeInstituteId();
 
     const [students, batches, fees] = await Promise.all([
       sb
@@ -129,6 +129,7 @@ export async function activateInstitutePlan(params: {
   amount?: string;
   status?: string;
   days?: number;
+  instituteId?: string;
 }) {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase not configured");
@@ -137,8 +138,8 @@ export async function activateInstitutePlan(params: {
   const days = params.days ?? 30;
   const ends = new Date();
   ends.setDate(ends.getDate() + days);
+  const id = params.instituteId || DEMO_INSTITUTE_ID;
 
-  // Always demo institute in V1 (udf1 may be old "inst1")
   const { error: upErr } = await sb
     .from("institutes")
     .update({
@@ -147,17 +148,17 @@ export async function activateInstitutePlan(params: {
       subscription_ends_at: ends.toISOString(),
       updated_at: new Date().toISOString(),
     })
-    .eq("id", DEMO_INSTITUTE_ID);
+    .eq("id", id);
 
   if (upErr) throw upErr;
 
   await sb.from("payment_events").insert({
-    institute_id: DEMO_INSTITUTE_ID,
+    institute_id: id,
     txnid: params.txnid,
     mihpayid: params.mihpayid || null,
     amount: params.amount || null,
     status: params.status || "success",
   });
 
-  return { accessUntil: ends, instituteId: DEMO_INSTITUTE_ID };
+  return { accessUntil: ends, instituteId: id };
 }
