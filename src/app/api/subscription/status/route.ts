@@ -6,8 +6,8 @@ import {
   type PlanType,
 } from "@/infrastructure/auth/subscriptionToken";
 import { isSupabaseConfigured } from "@/infrastructure/supabase/client";
-import { SupabaseInstituteRepository } from "@/infrastructure/supabase/InstituteRepository";
-import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
+import { getSupabaseAdmin } from "@/infrastructure/supabase/client";
+import { instituteIdFromCookieHeader } from "@/infrastructure/supabase/instituteContext";
 
 export async function GET(req: NextRequest) {
   const cookie = req.cookies.get(SUBSCRIPTION_COOKIE)?.value;
@@ -22,26 +22,53 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // Prefer institute from cookie (set when user selects centre)
+  const instituteId =
+    instituteIdFromCookieHeader(req.headers.get("cookie")) ||
+    req.nextUrl.searchParams.get("instituteId");
+
+  if (!instituteId || !isSupabaseConfigured()) {
+    // Soft: no institute selected yet — not an error
+    return NextResponse.json({
+      active: false,
+      plan: "expired",
+      accessUntil: null,
+      reason: "no_institute",
+    });
+  }
+
   try {
-    const institute = isSupabaseConfigured()
-      ? await new SupabaseInstituteRepository().getCurrent()
-      : await createRepositories().institute.getCurrent();
+    const sb = getSupabaseAdmin();
+    const { data: institute, error } = await sb
+      .from("institutes")
+      .select("id, plan, trial_ends_at, subscription_ends_at")
+      .eq("id", instituteId)
+      .maybeSingle();
+
+    if (error || !institute) {
+      return NextResponse.json({
+        active: false,
+        plan: "expired",
+        accessUntil: null,
+        reason: "not_found",
+      });
+    }
 
     let accessUntil: Date | null = null;
     let plan: PlanType = "expired";
 
     if (
-      institute.subscriptionEndsAt &&
-      new Date(institute.subscriptionEndsAt) > new Date()
+      institute.subscription_ends_at &&
+      new Date(institute.subscription_ends_at) > new Date()
     ) {
-      accessUntil = new Date(institute.subscriptionEndsAt);
+      accessUntil = new Date(institute.subscription_ends_at);
       plan = institute.plan === "pro" ? "pro" : "basic";
     } else if (
       institute.plan === "trial" &&
-      institute.trialEndsAt &&
-      new Date(institute.trialEndsAt) > new Date()
+      institute.trial_ends_at &&
+      new Date(institute.trial_ends_at) > new Date()
     ) {
-      accessUntil = new Date(institute.trialEndsAt);
+      accessUntil = new Date(institute.trial_ends_at);
       plan = "trial";
     }
 
@@ -55,7 +82,7 @@ export async function GET(req: NextRequest) {
         active: true,
         plan,
         accessUntil: accessUntil.toISOString(),
-        source: isSupabaseConfigured() ? "supabase" : "memory",
+        source: "supabase",
       });
       res.cookies.set(SUBSCRIPTION_COOKIE, token, {
         httpOnly: true,

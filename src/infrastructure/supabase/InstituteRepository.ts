@@ -3,6 +3,7 @@ import { IInstituteRepository } from "@/domain/repositories/IInstituteRepository
 import { getSupabaseAdmin, isSupabaseConfigured } from "./client";
 import {
   DEMO_INSTITUTE_ID,
+  getActiveInstituteId,
   requireActiveInstituteId,
 } from "./instituteContext";
 
@@ -23,11 +24,19 @@ function mapRow(row: Record<string, unknown>): Institute {
 }
 
 export class SupabaseInstituteRepository implements IInstituteRepository {
+  /** Optional id for server-side calls that pass institute explicitly */
+  constructor(private fixedId?: string) {}
+
+  private resolveId(): string {
+    if (this.fixedId) return this.fixedId;
+    return requireActiveInstituteId();
+  }
+
   async getCurrent(): Promise<Institute> {
     if (!isSupabaseConfigured()) {
       throw new Error("Supabase not configured");
     }
-    const id = requireActiveInstituteId();
+    const id = this.resolveId();
     const sb = getSupabaseAdmin();
     const { data, error } = await sb
       .from("institutes")
@@ -42,7 +51,7 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
 
   async update(data: Partial<Institute>): Promise<Institute> {
     const sb = getSupabaseAdmin();
-    const id = requireActiveInstituteId();
+    const id = this.resolveId();
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -71,7 +80,7 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
 
   async getDashboardStats(): Promise<DashboardStats> {
     const sb = getSupabaseAdmin();
-    const instituteId = requireActiveInstituteId();
+    const instituteId = this.resolveId();
 
     const [students, batches, fees] = await Promise.all([
       sb
@@ -126,7 +135,7 @@ export async function activateInstitutePlan(params: {
   const days = params.days ?? 30;
   const ends = new Date();
   ends.setDate(ends.getDate() + days);
-  const id = params.instituteId;
+  const id = params.instituteId || getActiveInstituteId();
   if (!id) throw new Error("instituteId required");
 
   const { error: upErr } = await sb

@@ -1,9 +1,10 @@
 /**
  * Active institute for the current browser session.
- * Tenants MUST have fm_institute_id set after login — never fall back to demo seed.
- * Demo id is only for unauthenticated / memory mode previews.
+ * Client: localStorage + cookie (so API routes can read it).
+ * Server: read cookie only — never localStorage.
  */
 export const DEMO_INSTITUTE_ID = "a0000000-0000-4000-8000-000000000001";
+export const INSTITUTE_COOKIE = "fm_institute_id";
 
 export function getActiveInstituteId(): string | null {
   if (typeof window !== "undefined") {
@@ -13,11 +14,33 @@ export function getActiveInstituteId(): string | null {
     } catch {
       /* ignore */
     }
+    // Fallback cookie
+    try {
+      const m = document.cookie.match(/(?:^|; )fm_institute_id=([^;]*)/);
+      if (m?.[1]) return decodeURIComponent(m[1]);
+    } catch {
+      /* ignore */
+    }
   }
   return null;
 }
 
-/** Used by repos — throws if missing so we don't leak demo data */
+/** Server: pass cookie value from NextRequest */
+export function instituteIdFromCookieHeader(
+  cookieHeader: string | null | undefined
+): string | null {
+  if (!cookieHeader) return null;
+  const parts = cookieHeader.split(";");
+  for (const p of parts) {
+    const [k, ...rest] = p.trim().split("=");
+    if (k === INSTITUTE_COOKIE) {
+      const v = decodeURIComponent(rest.join("=") || "");
+      if (v.length > 10) return v;
+    }
+  }
+  return null;
+}
+
 export function requireActiveInstituteId(): string {
   const id = getActiveInstituteId();
   if (!id) {
@@ -33,6 +56,9 @@ export function setActiveInstituteId(id: string) {
     } catch {
       /* ignore */
     }
+    // Readable by server API routes (not httpOnly so client can set it)
+    const maxAge = 60 * 60 * 24 * 180;
+    document.cookie = `${INSTITUTE_COOKIE}=${encodeURIComponent(id)}; path=/; max-age=${maxAge}; SameSite=Lax`;
   }
 }
 
@@ -43,5 +69,6 @@ export function clearActiveInstituteId() {
     } catch {
       /* ignore */
     }
+    document.cookie = `${INSTITUTE_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
   }
 }
