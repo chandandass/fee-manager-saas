@@ -30,7 +30,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (pathname?.startsWith("/centres/new") || pathname?.startsWith("/onboarding")) {
+    if (
+      pathname?.startsWith("/centres/new") ||
+      pathname?.startsWith("/onboarding")
+    ) {
       setReady(true);
       return;
     }
@@ -51,7 +54,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         const email = (session.user.email || "").toLowerCase();
         let instituteId = getActiveInstituteId();
 
-        // Owner with no active centre → pick first, or create form
         if (isPlatformOwner(email) && !instituteId) {
           try {
             const res = await fetch(
@@ -63,6 +65,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
               router.replace("/centres/new");
               return;
             }
+            // Sets localStorage + cookie BEFORE home mounts
             setActiveInstituteId(list[0].id);
             instituteId = list[0].id;
           } catch {
@@ -71,7 +74,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           }
         }
 
-        // Tenant without institute → onboarding
         if (!isPlatformOwner(email) && !instituteId) {
           router.replace("/onboarding");
           return;
