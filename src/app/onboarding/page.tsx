@@ -6,11 +6,13 @@ import {
   getSupabaseBrowser,
   isSupabaseConfigured,
 } from "@/infrastructure/supabase/client";
+import { setActiveInstituteId } from "@/infrastructure/supabase/instituteContext";
 import { Button, Input } from "@/presentation/components/ui";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [userId, setUserId] = useState("");
+  const [email, setEmail] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [instituteName, setInstituteName] = useState("");
   const [phone, setPhone] = useState("");
@@ -32,12 +34,13 @@ export default function OnboardingPage() {
       }
       const u = data.session.user;
       setUserId(u.id);
+      setEmail(u.email || "");
       const n =
         (u.user_metadata?.full_name as string) ||
         (u.user_metadata?.name as string) ||
         "";
       setOwnerName(n);
-      setInstituteName(""); // force teacher to type real centre name
+      setInstituteName("");
       setLoading(false);
     })();
   }, [router]);
@@ -48,6 +51,10 @@ export default function OnboardingPage() {
       setError("Please enter your institute / tuition name");
       return;
     }
+    if (!userId) {
+      setError("Session expired. Please sign in again.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -56,6 +63,7 @@ export default function OnboardingPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
+          email,
           instituteName: instituteName.trim(),
           phone,
           ownerName: ownerName.trim() || undefined,
@@ -68,11 +76,7 @@ export default function OnboardingPage() {
         return;
       }
       if (json.institute?.id) {
-        try {
-          localStorage.setItem("fm_institute_id", json.institute.id);
-        } catch {
-          /* ignore */
-        }
+        setActiveInstituteId(json.institute.id);
       }
       router.replace("/");
     } catch {
