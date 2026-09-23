@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Menu, X, Building2, Plus, Pencil, Check } from "lucide-react";
+import { Menu, X, Building2, Plus, Pencil, Check, LogOut } from "lucide-react";
 import { useSessionUser } from "@/presentation/hooks/useSessionUser";
-import { getActiveInstituteId, setActiveInstituteId } from "@/infrastructure/supabase/instituteContext";
+import {
+  getActiveInstituteId,
+  setActiveInstituteId,
+} from "@/infrastructure/supabase/instituteContext";
 import { Button, Input, Modal } from "@/presentation/components/ui";
+import { logoutUser } from "@/lib/logout";
 
 type Inst = {
   id: string;
@@ -15,10 +19,6 @@ type Inst = {
   plan: string;
 };
 
-/**
- * Hamburger — only meaningful UI for platform owner.
- * Loads institute list once when menu opens (lazy = less bandwidth).
- */
 export function OwnerMenu() {
   const { user, loading } = useSessionUser();
   const [open, setOpen] = useState(false);
@@ -53,7 +53,6 @@ export function OwnerMenu() {
     }
   }, [user]);
 
-  // Fetch only when owner opens menu (not on every page load)
   useEffect(() => {
     if (open && user?.isOwner && list === null) {
       loadList();
@@ -66,7 +65,7 @@ export function OwnerMenu() {
     setActiveInstituteId(id);
     setActiveId(id);
     setOpen(false);
-    window.location.href = "/"; // hard refresh so repos pick new id
+    window.location.href = "/";
   }
 
   function openCreate() {
@@ -130,7 +129,7 @@ export function OwnerMenu() {
         }
       }
       setFormOpen(false);
-      setList(null); // force refresh next open
+      setList(null);
       await loadList();
       if (!editing) window.location.href = "/";
     } catch (ex) {
@@ -160,7 +159,7 @@ export function OwnerMenu() {
             aria-label="Close"
             onClick={() => setOpen(false)}
           />
-          <div className="relative w-full max-w-sm bg-white h-full shadow-xl flex flex-col animate-in slide-in-from-right">
+          <div className="relative w-full max-w-sm bg-white h-full shadow-xl flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
               <div>
                 <p className="text-sm font-semibold text-slate-900">Platform</p>
@@ -233,7 +232,7 @@ export function OwnerMenu() {
               })}
             </div>
 
-            <div className="p-3 border-t border-slate-100">
+            <div className="p-3 border-t border-slate-100 space-y-1">
               <Link
                 href="/settings"
                 onClick={() => setOpen(false)}
@@ -241,6 +240,14 @@ export function OwnerMenu() {
               >
                 Settings
               </Link>
+              <button
+                type="button"
+                onClick={() => logoutUser()}
+                className="w-full flex items-center justify-center gap-2 text-xs font-medium text-red-600 py-2.5 rounded-xl hover:bg-red-50"
+              >
+                <LogOut size={14} />
+                Log out
+              </button>
             </div>
           </div>
         </div>

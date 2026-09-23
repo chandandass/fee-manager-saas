@@ -15,8 +15,11 @@ import {
   CreditCard,
   Bell,
   Sparkles,
+  LogOut,
 } from "lucide-react";
 import { useSubscription } from "@/presentation/hooks/useSubscription";
+import { useSessionUser } from "@/presentation/hooks/useSessionUser";
+import { logoutUser } from "@/lib/logout";
 
 const repos = createRepositories();
 
@@ -34,15 +37,7 @@ function PaymentBanner() {
   if (payment === "failed") {
     return (
       <div className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-900">
-        Payment failed or cancelled. You can try again anytime.
-      </div>
-    );
-  }
-  if (payment === "invalid" || payment === "error") {
-    return (
-      <div className="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-950">
-        Could not verify payment. If money was deducted, contact support with
-        your transaction id.
+        Payment failed or cancelled.
       </div>
     );
   }
@@ -51,6 +46,7 @@ function PaymentBanner() {
 
 function SettingsContent() {
   const params = useSearchParams();
+  const { user } = useSessionUser();
   const {
     active: subActive,
     plan: subPlan,
@@ -62,10 +58,15 @@ function SettingsContent() {
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState("");
+  const [loggingOut, setLoggingOut] = useState(false);
 
   async function refreshInstitute() {
-    const inst = await repos.institute.getCurrent();
-    setInstitute(inst);
+    try {
+      const inst = await repos.institute.getCurrent();
+      setInstitute(inst);
+    } catch {
+      setInstitute(null);
+    }
   }
 
   useEffect(() => {
@@ -108,7 +109,7 @@ function SettingsContent() {
         body: JSON.stringify({
           firstname: institute.ownerName,
           phone: institute.phone,
-          email: "owner@example.com",
+          email: user?.email || "owner@example.com",
           instituteId: institute.id,
         }),
       });
@@ -138,6 +139,11 @@ function SettingsContent() {
     }
   }
 
+  async function onLogout() {
+    setLoggingOut(true);
+    await logoutUser();
+  }
+
   if (!institute || subLoading) {
     return (
       <div className="p-4 animate-pulse">
@@ -154,6 +160,12 @@ function SettingsContent() {
       <Suspense fallback={null}>
         <PaymentBanner />
       </Suspense>
+
+      {user && (
+        <p className="text-xs text-slate-500 -mt-2">
+          Signed in as <span className="font-medium text-slate-700">{user.email}</span>
+        </p>
+      )}
 
       <Card>
         <div className="flex items-center gap-3">
@@ -231,9 +243,7 @@ function SettingsContent() {
         <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 opacity-60">
           <div className="flex items-center gap-3">
             <Bell size={18} className="text-slate-500" />
-            <span className="text-sm font-medium">
-              Fee Reminders / Notifications
-            </span>
+            <span className="text-sm font-medium">Fee Reminders / Notifications</span>
           </div>
           <Badge variant="default">Soon</Badge>
         </div>
@@ -248,7 +258,17 @@ function SettingsContent() {
         </div>
       </div>
 
-      <p className="text-center text-xs text-slate-400 pt-4">
+      <Button
+        variant="danger"
+        className="w-full"
+        onClick={onLogout}
+        disabled={loggingOut}
+      >
+        <LogOut size={16} />
+        {loggingOut ? "Signing out…" : "Log out"}
+      </Button>
+
+      <p className="text-center text-xs text-slate-400 pt-2">
         FeeManager v0.1 · Built for Indian coaching centres
       </p>
     </div>
