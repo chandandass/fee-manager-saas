@@ -7,6 +7,7 @@ import {
   isSupabaseConfigured,
 } from "@/infrastructure/supabase/client";
 import { setActiveInstituteId } from "@/infrastructure/supabase/instituteContext";
+import { logoutUser } from "@/lib/logout";
 import { Button, Input } from "@/presentation/components/ui";
 
 export default function OnboardingPage() {
@@ -17,6 +18,7 @@ export default function OnboardingPage() {
   const [instituteName, setInstituteName] = useState("");
   const [phone, setPhone] = useState("");
   const [saving, setSaving] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -85,6 +87,13 @@ export default function OnboardingPage() {
     }
   }
 
+  async function onCancel() {
+    setCancelling(true);
+    setError("");
+    // Sign out + clear fm_institute_id + go to /login
+    await logoutUser();
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">
@@ -101,6 +110,11 @@ export default function OnboardingPage() {
           <p className="text-sm text-slate-500">
             New account — tell us your tuition name. Phone is optional.
           </p>
+          {email && (
+            <p className="text-xs text-slate-400 pt-1">
+              Signed in as {email}
+            </p>
+          )}
         </div>
 
         <form
@@ -146,10 +160,24 @@ export default function OnboardingPage() {
 
           {error && <p className="text-xs text-red-600">{error}</p>}
 
-          <Button type="submit" className="w-full" size="lg" disabled={saving}>
+          <Button type="submit" className="w-full" size="lg" disabled={saving || cancelling}>
             {saving ? "Saving…" : "Continue to app"}
           </Button>
         </form>
+
+        <div className="text-center space-y-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={saving || cancelling}
+            className="text-sm font-medium text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            {cancelling ? "Clearing…" : "Cancel onboarding"}
+          </button>
+          <p className="text-xs text-slate-400">
+            Clears this sign-in and returns to the login page
+          </p>
+        </div>
       </div>
     </div>
   );
