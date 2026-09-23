@@ -9,7 +9,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   const hideNav =
     pathname?.startsWith("/login") ||
     pathname?.startsWith("/auth") ||
-    pathname?.startsWith("/onboarding");
+    pathname?.startsWith("/onboarding") ||
+    pathname?.startsWith("/centres/new");
 
   return (
     <>

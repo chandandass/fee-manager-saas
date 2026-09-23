@@ -66,6 +66,32 @@ export default function AuthCallbackPage() {
           email.split("@")[0] ||
           "Teacher";
 
+        // ——— Platform owner ———
+        if (isPlatformOwner(email)) {
+          setMessage("Loading centres…");
+          const res = await fetch(
+            `/api/institutes/mine?email=${encodeURIComponent(email)}&userId=${encodeURIComponent(user.id)}`
+          );
+          const json = await res.json();
+          const list = (json.institutes || []) as { id: string }[];
+
+          window.history.replaceState({}, "", "/auth/callback");
+          if (cancelled) return;
+
+          if (list.length === 0) {
+            setMessage("No centres yet — create one…");
+            router.replace("/centres/new");
+            return;
+          }
+
+          // Default: first centre (can change from ☰ drawer)
+          setActiveInstituteId(list[0].id);
+          setMessage("Welcome…");
+          router.replace("/");
+          return;
+        }
+
+        // ——— Tenant ———
         const res = await fetch("/api/auth/ensure-institute", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -78,37 +104,25 @@ export default function AuthCallbackPage() {
         const json = await res.json();
 
         if (!json.ok || !json.instituteId) {
-          console.error("ensure-institute", json);
           throw new Error(json.reason || "Could not create centre");
         }
 
         setActiveInstituteId(json.instituteId);
-
         window.history.replaceState({}, "", "/auth/callback");
         if (cancelled) return;
 
-        // Platform owner → home (can use ☰ to switch centres)
-        if (isPlatformOwner(email)) {
-          setMessage("Welcome, platform owner…");
-          router.replace("/");
-          return;
-        }
-
-        // New / incomplete → onboarding form
         if (json.needsOnboarding) {
           setMessage("Set up your coaching centre…");
           router.replace("/onboarding");
           return;
         }
 
-        // Existing linked centre → home
         setMessage("Welcome back…");
         router.replace("/");
       } catch (e) {
         console.error("[auth/callback]", e);
         if (!cancelled) {
           setMessage("Sign-in failed. Returning to login…");
-          // Do NOT go to home
           setTimeout(() => router.replace("/login?error=callback"), 1600);
         }
       }

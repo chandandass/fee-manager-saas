@@ -6,7 +6,10 @@ import {
   getSupabaseBrowser,
   isSupabaseConfigured,
 } from "@/infrastructure/supabase/client";
-import { getActiveInstituteId } from "@/infrastructure/supabase/instituteContext";
+import {
+  getActiveInstituteId,
+  setActiveInstituteId,
+} from "@/infrastructure/supabase/instituteContext";
 import { isPlatformOwner } from "@/lib/platform";
 
 const PUBLIC = ["/login", "/auth/callback"];
@@ -27,6 +30,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    if (pathname?.startsWith("/centres/new") || pathname?.startsWith("/onboarding")) {
+      setReady(true);
+      return;
+    }
+
     let cancelled = false;
 
     (async () => {
@@ -40,12 +48,31 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        const email = session.user.email || "";
-        const onOnboarding = pathname?.startsWith("/onboarding");
-        const instituteId = getActiveInstituteId();
+        const email = (session.user.email || "").toLowerCase();
+        let instituteId = getActiveInstituteId();
 
-        // Tenant without institute id → must onboard (never browse demo data)
-        if (!isPlatformOwner(email) && !instituteId && !onOnboarding) {
+        // Owner with no active centre → pick first, or create form
+        if (isPlatformOwner(email) && !instituteId) {
+          try {
+            const res = await fetch(
+              `/api/institutes/mine?email=${encodeURIComponent(email)}&userId=${encodeURIComponent(session.user.id)}`
+            );
+            const json = await res.json();
+            const list = (json.institutes || []) as { id: string }[];
+            if (list.length === 0) {
+              router.replace("/centres/new");
+              return;
+            }
+            setActiveInstituteId(list[0].id);
+            instituteId = list[0].id;
+          } catch {
+            router.replace("/centres/new");
+            return;
+          }
+        }
+
+        // Tenant without institute → onboarding
+        if (!isPlatformOwner(email) && !instituteId) {
           router.replace("/onboarding");
           return;
         }
@@ -62,9 +89,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   }, [pathname, router]);
 
   const isPublic = PUBLIC.some((p) => pathname?.startsWith(p));
-  const isOnboarding = pathname?.startsWith("/onboarding");
+  const isSetup =
+    pathname?.startsWith("/onboarding") || pathname?.startsWith("/centres/new");
 
-  if (!ready && isSupabaseConfigured() && !isPublic && !isOnboarding) {
+  if (!ready && isSupabaseConfigured() && !isPublic && !isSetup) {
     return (
       <div className="p-8 text-center text-sm text-slate-500 animate-pulse">
         Checking sign-in…
