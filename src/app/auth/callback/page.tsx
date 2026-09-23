@@ -6,6 +6,8 @@ import {
   getSupabaseBrowser,
   isSupabaseConfigured,
 } from "@/infrastructure/supabase/client";
+import { setActiveInstituteId } from "@/infrastructure/supabase/instituteContext";
+import { isPlatformOwner } from "@/lib/platform";
 
 export default function AuthCallbackPage() {
   const router = useRouter();
@@ -28,10 +30,7 @@ export default function AuthCallbackPage() {
 
         if (code) {
           const { error } = await sb.auth.exchangeCodeForSession(code);
-          if (error) {
-            console.error("exchangeCodeForSession", error);
-            throw error;
-          }
+          if (error) throw error;
         } else {
           const hash = window.location.hash?.replace(/^#/, "") || "";
           if (hash.includes("access_token")) {
@@ -48,7 +47,7 @@ export default function AuthCallbackPage() {
           }
         }
 
-        await new Promise((r) => setTimeout(r, 80));
+        await new Promise((r) => setTimeout(r, 100));
 
         let session = (await sb.auth.getSession()).data.session;
         if (!session?.user) {
@@ -56,55 +55,61 @@ export default function AuthCallbackPage() {
           session = (await sb.auth.getSession()).data.session;
         }
         if (!session?.user) {
-          throw new Error("No session after OAuth");
+          throw new Error("No session");
         }
 
         const user = session.user;
-        const email = user.email || "";
+        const email = (user.email || "").toLowerCase();
         const name =
           (user.user_metadata?.full_name as string) ||
           (user.user_metadata?.name as string) ||
           email.split("@")[0] ||
           "Teacher";
 
-        let needsOnboarding = true;
-        try {
-          const res = await fetch("/api/auth/ensure-institute", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              userId: user.id,
-              email,
-              name,
-            }),
-          });
-          const json = await res.json();
-          needsOnboarding = json.needsOnboarding !== false;
-          // Persist active institute for client repos
-          if (json.instituteId) {
-            try {
-              localStorage.setItem("fm_institute_id", json.instituteId);
-            } catch {
-              /* ignore */
-            }
-          }
-        } catch (e) {
-          console.warn("ensure-institute", e);
-          needsOnboarding = true;
+        const res = await fetch("/api/auth/ensure-institute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            email,
+            name,
+          }),
+        });
+        const json = await res.json();
+
+        if (!json.ok || !json.instituteId) {
+          console.error("ensure-institute", json);
+          throw new Error(json.reason || "Could not create centre");
         }
+
+        setActiveInstituteId(json.instituteId);
 
         window.history.replaceState({}, "", "/auth/callback");
         if (cancelled) return;
 
-        setMessage(
-          needsOnboarding ? "Almost done — set up your centre…" : "Welcome back!"
-        );
-        router.replace(needsOnboarding ? "/onboarding" : "/");
+        // Platform owner → home (can use ☰ to switch centres)
+        if (isPlatformOwner(email)) {
+          setMessage("Welcome, platform owner…");
+          router.replace("/");
+          return;
+        }
+
+        // New / incomplete → onboarding form
+        if (json.needsOnboarding) {
+          setMessage("Set up your coaching centre…");
+          router.replace("/onboarding");
+          return;
+        }
+
+        // Existing linked centre → home
+        setMessage("Welcome back…");
+        router.replace("/");
       } catch (e) {
         console.error("[auth/callback]", e);
         if (!cancelled) {
-          setMessage("Sign-in failed. Try again from the login page…");
-          setTimeout(() => router.replace("/login?error=callback"), 1800);
+          setMessage("Sign-in failed. Returning to login…");
+          // Do NOT go to home
+          setTimeout(() => router.replace("/login?error=callback"), 1600);
         }
       }
     }

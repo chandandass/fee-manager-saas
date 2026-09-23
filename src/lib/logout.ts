@@ -1,6 +1,9 @@
-import { getSupabaseBrowser, isSupabaseConfigured } from "@/infrastructure/supabase/client";
+import {
+  getSupabaseBrowser,
+  isSupabaseConfigured,
+} from "@/infrastructure/supabase/client";
+import { clearActiveInstituteId } from "@/infrastructure/supabase/instituteContext";
 
-/** Clear session + local institute scope, then go to login. */
 export async function logoutUser() {
   try {
     if (isSupabaseConfigured()) {
@@ -10,8 +13,8 @@ export async function logoutUser() {
   } catch (e) {
     console.warn("[logout]", e);
   }
+  clearActiveInstituteId();
   try {
-    localStorage.removeItem("fm_institute_id");
     localStorage.removeItem("fm_plan_active_until");
   } catch {
     /* ignore */

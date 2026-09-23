@@ -1,7 +1,7 @@
 import { Batch } from "@/domain/entities/Student";
 import { IBatchRepository } from "@/domain/repositories/IBatchRepository";
 import { getSupabaseAdmin } from "./client";
-import { getActiveInstituteId } from "./instituteContext";
+import { requireActiveInstituteId } from "./instituteContext";
 
 function mapBatch(row: Record<string, unknown>, studentCount = 0): Batch {
   return {
@@ -18,8 +18,8 @@ function mapBatch(row: Record<string, unknown>, studentCount = 0): Batch {
 
 export class SupabaseBatchRepository implements IBatchRepository {
   async getAll(): Promise<Batch[]> {
+    const instituteId = requireActiveInstituteId();
     const sb = getSupabaseAdmin();
-    const instituteId = getActiveInstituteId();
     const { data, error } = await sb
       .from("batches")
       .select("*")
@@ -59,7 +59,7 @@ export class SupabaseBatchRepository implements IBatchRepository {
     const { data, error } = await sb
       .from("batches")
       .insert({
-        institute_id: getActiveInstituteId(),
+        institute_id: requireActiveInstituteId(),
         name: batch.name,
         subject: batch.subject || null,
         teacher_name: batch.teacherName || null,

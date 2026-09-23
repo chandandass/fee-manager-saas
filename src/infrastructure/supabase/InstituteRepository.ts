@@ -1,21 +1,12 @@
 import { Institute, DashboardStats } from "@/domain/entities/Student";
 import { IInstituteRepository } from "@/domain/repositories/IInstituteRepository";
 import { getSupabaseAdmin, isSupabaseConfigured } from "./client";
+import {
+  DEMO_INSTITUTE_ID,
+  requireActiveInstituteId,
+} from "./instituteContext";
 
-/** Legacy demo seed — only used when no logged-in institute id */
-export const DEMO_INSTITUTE_ID = "a0000000-0000-4000-8000-000000000001";
-
-function activeInstituteId(): string {
-  if (typeof window !== "undefined") {
-    try {
-      const id = localStorage.getItem("fm_institute_id");
-      if (id) return id;
-    } catch {
-      /* ignore */
-    }
-  }
-  return DEMO_INSTITUTE_ID;
-}
+export { DEMO_INSTITUTE_ID };
 
 function mapRow(row: Record<string, unknown>): Institute {
   return {
@@ -36,9 +27,8 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
     if (!isSupabaseConfigured()) {
       throw new Error("Supabase not configured");
     }
+    const id = requireActiveInstituteId();
     const sb = getSupabaseAdmin();
-    const id = activeInstituteId();
-
     const { data, error } = await sb
       .from("institutes")
       .select("*")
@@ -46,15 +36,13 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
       .maybeSingle();
 
     if (error) throw error;
-    if (!data) {
-      throw new Error("Institute not found — sign in again");
-    }
+    if (!data) throw new Error("Institute not found — complete setup");
     return mapRow(data);
   }
 
   async update(data: Partial<Institute>): Promise<Institute> {
     const sb = getSupabaseAdmin();
-    const id = activeInstituteId();
+    const id = requireActiveInstituteId();
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -83,7 +71,7 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
 
   async getDashboardStats(): Promise<DashboardStats> {
     const sb = getSupabaseAdmin();
-    const instituteId = activeInstituteId();
+    const instituteId = requireActiveInstituteId();
 
     const [students, batches, fees] = await Promise.all([
       sb
@@ -138,7 +126,8 @@ export async function activateInstitutePlan(params: {
   const days = params.days ?? 30;
   const ends = new Date();
   ends.setDate(ends.getDate() + days);
-  const id = params.instituteId || DEMO_INSTITUTE_ID;
+  const id = params.instituteId;
+  if (!id) throw new Error("instituteId required");
 
   const { error: upErr } = await sb
     .from("institutes")

@@ -3,11 +3,11 @@ import {
   getSupabaseAdmin,
   isSupabaseConfigured,
 } from "@/infrastructure/supabase/client";
+import { isPlatformOwner } from "@/lib/platform";
 
 /**
- * One institute per Google user.
- * - New Gmail → create empty trial institute → needsOnboarding: true
- * - Existing → return their institute only (never the demo seed)
+ * Resolve institute for this Google user ONLY (by owner_user_id).
+ * Never returns the demo seed institute for a random Gmail.
  */
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const userId = String(body.userId || "");
-    const email = String(body.email || "");
+    const email = String(body.email || "").toLowerCase();
     const name = String(body.name || "Teacher").slice(0, 80);
     if (!userId) {
       return NextResponse.json(
@@ -47,27 +47,21 @@ export async function POST(req: NextRequest) {
     }
 
     if (existing) {
-      const incomplete =
-        !existing.name ||
-        String(existing.name).trim() === "" ||
-        String(existing.name).endsWith("'s Tuition") ||
-        !existing.phone ||
-        String(existing.phone).trim() === "";
+      const needsOnboarding =
+        !isPlatformOwner(email) &&
+        (!existing.name ||
+          String(existing.name).trim() === "" ||
+          String(existing.name).endsWith("'s Tuition"));
 
       return NextResponse.json({
         ok: true,
         instituteId: existing.id,
         created: false,
-        // Phone optional: only force onboarding if name still placeholder
-        needsOnboarding:
-          !existing.name ||
-          String(existing.name).trim() === "" ||
-          String(existing.name).endsWith("'s Tuition"),
-        incomplete,
+        needsOnboarding,
       });
     }
 
-    // Brand-new Google account → own blank institute (NOT demo data)
+    // Brand-new user → new blank institute (not demo)
     const trialEnds = new Date();
     trialEnds.setDate(trialEnds.getDate() + 7);
 
@@ -98,7 +92,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       instituteId: data.id,
       created: true,
-      needsOnboarding: true,
+      needsOnboarding: !isPlatformOwner(email),
     });
   } catch (e) {
     console.error("[ensure-institute]", e);

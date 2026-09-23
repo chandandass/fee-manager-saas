@@ -1,7 +1,7 @@
 import { FeeRecord, FeeStatus } from "@/domain/entities/Student";
 import { IFeeRepository } from "@/domain/repositories/IFeeRepository";
 import { getSupabaseAdmin } from "./client";
-import { getActiveInstituteId } from "./instituteContext";
+import { requireActiveInstituteId } from "./instituteContext";
 
 function mapFee(row: Record<string, unknown>): FeeRecord {
   return {
@@ -32,7 +32,7 @@ export class SupabaseFeeRepository implements IFeeRepository {
     let q = sb
       .from("fees")
       .select("*")
-      .eq("institute_id", getActiveInstituteId());
+      .eq("institute_id", requireActiveInstituteId());
     if (month) q = q.eq("month", month);
     const { data, error } = await q.order("month", { ascending: false });
     if (error) throw error;
@@ -91,16 +91,14 @@ export class SupabaseFeeRepository implements IFeeRepository {
 
   async createMonthlyFees(month: string): Promise<FeeRecord[]> {
     const sb = getSupabaseAdmin();
-    const instituteId = getActiveInstituteId();
+    const instituteId = requireActiveInstituteId();
     const { data: existing } = await sb
       .from("fees")
       .select("id")
       .eq("institute_id", instituteId)
       .eq("month", month)
       .limit(1);
-    if (existing && existing.length > 0) {
-      return this.getAll(month);
-    }
+    if (existing && existing.length > 0) return this.getAll(month);
 
     const { data: students, error: sErr } = await sb
       .from("students")
@@ -121,7 +119,6 @@ export class SupabaseFeeRepository implements IFeeRepository {
     }));
 
     if (rows.length === 0) return [];
-
     const { data, error } = await sb.from("fees").insert(rows).select("*");
     if (error) throw error;
     return (data || []).map(mapFee);
