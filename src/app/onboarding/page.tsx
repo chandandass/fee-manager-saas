@@ -35,13 +35,45 @@ export default function OnboardingPage() {
         return;
       }
       const u = data.session.user;
+      const em = (u.email || "").toLowerCase();
       setUserId(u.id);
-      setEmail(u.email || "");
+      setEmail(em);
       const n =
         (u.user_metadata?.full_name as string) ||
         (u.user_metadata?.name as string) ||
         "";
       setOwnerName(n);
+
+      // Re-check claim: if admin already assigned this email → skip form
+      try {
+        const res = await fetch("/api/auth/ensure-institute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: u.id,
+            email: em,
+            name: n || "Teacher",
+          }),
+        });
+        const json = await res.json();
+        console.log("[onboarding] ensure-institute", json);
+        if (json.ok && json.instituteId && json.claimed && !json.needsOnboarding) {
+          setActiveInstituteId(json.instituteId);
+          router.replace("/");
+          return;
+        }
+        if (json.ok && json.instituteId && !json.needsOnboarding) {
+          setActiveInstituteId(json.instituteId);
+          router.replace("/");
+          return;
+        }
+        if (json.ok && json.instituteId) {
+          setActiveInstituteId(json.instituteId);
+        }
+      } catch (e) {
+        console.warn("[onboarding] ensure", e);
+      }
+
       setInstituteName("");
       setLoading(false);
     })();
@@ -89,15 +121,13 @@ export default function OnboardingPage() {
 
   async function onCancel() {
     setCancelling(true);
-    setError("");
-    // Sign out + clear fm_institute_id + go to /login
     await logoutUser();
   }
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-slate-500">
-        Loading…
+        Checking your centre…
       </div>
     );
   }
@@ -111,9 +141,7 @@ export default function OnboardingPage() {
             New account — tell us your tuition name. Phone is optional.
           </p>
           {email && (
-            <p className="text-xs text-slate-400 pt-1">
-              Signed in as {email}
-            </p>
+            <p className="text-xs text-slate-400 pt-1">Signed in as {email}</p>
           )}
         </div>
 
@@ -174,9 +202,6 @@ export default function OnboardingPage() {
           >
             {cancelling ? "Clearing…" : "Cancel onboarding"}
           </button>
-          <p className="text-xs text-slate-400">
-            Clears this sign-in and returns to the login page
-          </p>
         </div>
       </div>
     </div>

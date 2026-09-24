@@ -7,15 +7,14 @@ import { isPlatformOwner } from "@/lib/platform";
 
 function isPlaceholderName(name: string | null | undefined): boolean {
   if (!name || !String(name).trim()) return true;
-  return String(name).trim().endsWith("'s Tuition");
+  const n = String(name).trim();
+  // Only pure auto-generated placeholders, not real centres named "X Tuition"
+  return /^.+'s Tuition$/i.test(n);
 }
 
 /**
- * Resolve institute for Google user.
- * Priority:
- *  1) Centre with matching teacher email (admin assigned) → auto-claim
- *  2) Centre already linked by owner_user_id
- *  3) Create new + onboarding
+ * Teacher email on institutes row = source of truth for assignment.
+ * Matching Google email always gets that centre (claim / re-claim).
  */
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
@@ -39,80 +38,61 @@ export async function POST(req: NextRequest) {
 
     const admin = getSupabaseAdmin();
 
-    // ——— 1) Match by teacher email (admin pre-created) ———
+    // ——— 1) Match teacher email (admin assigned) — FORCE claim ———
     if (email && !isPlatformOwner(email)) {
-      // Fetch candidates with email set; match case-insensitive in JS (reliable)
-      const { data: rows, error: emailErr } = await admin
+      const { data: rows, error: listErr } = await admin
         .from("institutes")
-        .select("id, name, phone, owner_name, email, owner_user_id")
-        .not("email", "is", null);
+        .select("id, name, phone, owner_name, email, owner_user_id");
 
-      if (emailErr) {
-        console.error("[ensure-institute] email list", emailErr);
-        // Column missing? common if migration not run
-        if (
-          emailErr.message?.includes("owner_user_id") ||
-          emailErr.message?.includes("does not exist")
-        ) {
-          return NextResponse.json({
-            ok: false,
-            needsOnboarding: true,
-            reason:
-              "DB missing columns. Run supabase/auth_migration.sql in SQL Editor.",
-          });
-        }
+      if (listErr) {
+        console.error("[ensure-institute] list", listErr);
+        return NextResponse.json({
+          ok: false,
+          needsOnboarding: true,
+          reason: listErr.message,
+        });
       }
 
       const byEmail = (rows || []).find(
         (r) => String(r.email || "").toLowerCase().trim() === email
       );
 
+      console.log(
+        "[ensure-institute] lookup",
+        email,
+        "matches",
+        byEmail?.id || null,
+        "name",
+        byEmail?.name || null
+      );
+
       if (byEmail) {
-        const free =
-          !byEmail.owner_user_id || byEmail.owner_user_id === userId;
+        // Always attach this Google user to the email-matched centre
+        const { error: claimErr } = await admin
+          .from("institutes")
+          .update({
+            owner_user_id: userId,
+            email,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", byEmail.id);
 
-        if (free) {
-          const { data: claimed, error: claimErr } = await admin
-            .from("institutes")
-            .update({
-              owner_user_id: userId,
-              email,
-              owner_name: byEmail.owner_name || name,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", byEmail.id)
-            .select("id, name")
-            .single();
-
-          if (claimErr) {
-            console.error("[ensure-institute] claim failed", claimErr);
-            // Still return this institute id so UI opens it even if update partially failed
-            return NextResponse.json({
-              ok: true,
-              instituteId: byEmail.id,
-              created: false,
-              claimed: false,
-              needsOnboarding: isPlaceholderName(byEmail.name),
-              warn: claimErr.message,
-            });
-          }
-
-          console.log("[ensure-institute] CLAIMED", claimed?.id, email);
-          return NextResponse.json({
-            ok: true,
-            instituteId: byEmail.id,
-            created: false,
-            claimed: true,
-            needsOnboarding: isPlaceholderName(byEmail.name),
-          });
+        if (claimErr) {
+          console.error("[ensure-institute] claim update", claimErr);
+        } else {
+          console.log("[ensure-institute] CLAIMED", byEmail.id, "→", userId);
         }
 
-        console.warn(
-          "[ensure-institute] email taken by other user",
-          byEmail.owner_user_id
-        );
-      } else {
-        console.log("[ensure-institute] no institute with email", email);
+        // Real centre name from admin → go Home, no onboarding form
+        const needsOnboarding = isPlaceholderName(byEmail.name);
+
+        return NextResponse.json({
+          ok: true,
+          instituteId: byEmail.id,
+          created: false,
+          claimed: true,
+          needsOnboarding,
+        });
       }
     }
 
@@ -124,14 +104,6 @@ export async function POST(req: NextRequest) {
 
     if (findErr) {
       console.error("[ensure-institute] find", findErr);
-      if (findErr.message?.includes("owner_user_id")) {
-        return NextResponse.json({
-          ok: false,
-          needsOnboarding: true,
-          reason:
-            "DB missing owner_user_id. Run supabase/auth_migration.sql",
-        });
-      }
       return NextResponse.json({
         ok: false,
         needsOnboarding: true,
@@ -141,10 +113,6 @@ export async function POST(req: NextRequest) {
 
     const existing = (existingList || [])[0];
     if (existing) {
-      if (email && String(existing.email || "").toLowerCase() !== email) {
-        await admin.from("institutes").update({ email }).eq("id", existing.id);
-      }
-
       return NextResponse.json({
         ok: true,
         instituteId: existing.id,
@@ -155,7 +123,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ——— 3) Brand-new self-serve ———
+    // ——— 3) Self-serve new ———
     const trialEnds = new Date();
     trialEnds.setDate(trialEnds.getDate() + 7);
 
