@@ -1,26 +1,42 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   getSupabaseBrowser,
   isSupabaseConfigured,
 } from "@/infrastructure/supabase/client";
-import { Suspense } from "react";
+
+function getOAuthRedirectTo(): string {
+  // Prefer env so phone testing can force LAN IP even if something strips origin
+  const fromEnv = (process.env.NEXT_PUBLIC_APP_URL || "").replace(/\/$/, "");
+  if (fromEnv) return `${fromEnv}/auth/callback`;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/auth/callback`;
+  }
+  return "http://localhost:3000/auth/callback";
+}
 
 function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [redirectHint, setRedirectHint] = useState("");
 
-  // If Google sent tokens to /login by mistake, recover them
+  // Supabase sometimes returns ?code= on Site URL root (/) — forward to callback
   useEffect(() => {
+    const code = params.get("code");
+    if (code) {
+      const q = window.location.search;
+      window.location.replace(`/auth/callback${q}`);
+      return;
+    }
+
     if (!isSupabaseConfigured()) return;
 
-    const hash = typeof window !== "undefined" ? window.location.hash : "";
+    const hash = window.location.hash || "";
     if (hash.includes("access_token")) {
-      // Move handling to callback page so URL is cleaned
       window.location.replace("/auth/callback" + hash);
       return;
     }
@@ -29,9 +45,10 @@ function LoginInner() {
     sb.auth.getSession().then(({ data }) => {
       if (data.session) router.replace("/");
     });
-  }, [router]);
+  }, [params, router]);
 
   useEffect(() => {
+    setRedirectHint(getOAuthRedirectTo());
     const err = params.get("error");
     if (err === "auth" || err === "callback" || err === "session") {
       setError("Sign-in did not finish. Please try Google again.");
@@ -47,12 +64,16 @@ function LoginInner() {
     setLoading(true);
     try {
       const sb = getSupabaseBrowser();
-      const origin = window.location.origin;
+      const redirectTo = getOAuthRedirectTo();
+
+      // Helpful in phone debug
+      console.log("[oauth] redirectTo =", redirectTo);
 
       const { error: oauthError } = await sb.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${origin}/auth/callback`,
+          redirectTo,
+          skipBrowserRedirect: false,
           queryParams: {
             access_type: "offline",
             prompt: "select_account",
@@ -107,6 +128,12 @@ function LoginInner() {
 
           {error && (
             <p className="text-xs text-red-600 text-center">{error}</p>
+          )}
+
+          {redirectHint && (
+            <p className="text-[10px] text-slate-400 text-center break-all leading-relaxed">
+              OAuth return URL: {redirectHint}
+            </p>
           )}
         </div>
 

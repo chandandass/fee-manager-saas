@@ -13,7 +13,12 @@ import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { GetDashboardStats } from "@/domain/use-cases/GetDashboardStats";
 import { ManageFees } from "@/domain/use-cases/ManageFees";
-import { DashboardStats, FeeRecord, Student, Institute } from "@/domain/entities/Student";
+import {
+  DashboardStats,
+  FeeRecord,
+  Student,
+  Institute,
+} from "@/domain/entities/Student";
 import {
   MessageCircle,
   Phone,
@@ -34,12 +39,10 @@ function PlanBadge({
   institute,
   subPlan,
   subActive,
-  subUntil,
 }: {
   institute: Institute | null;
   subPlan: string;
   subActive: boolean;
-  subUntil: string | null;
 }) {
   const fromDb =
     institute &&
@@ -48,15 +51,10 @@ function PlanBadge({
     new Date(institute.subscriptionEndsAt) > new Date();
 
   const paid =
-    fromDb ||
-    (subActive && (subPlan === "basic" || subPlan === "pro"));
+    fromDb || (subActive && (subPlan === "basic" || subPlan === "pro"));
 
-  if (paid) {
-    return <Badge variant="success">Basic</Badge>;
-  }
-  if (subActive && subPlan === "trial") {
-    return <Badge variant="info">Trial</Badge>;
-  }
+  if (paid) return <Badge variant="success">Basic</Badge>;
+  if (subActive && subPlan === "trial") return <Badge variant="info">Trial</Badge>;
   if (
     institute?.plan === "trial" &&
     institute.trialEndsAt &&
@@ -68,36 +66,49 @@ function PlanBadge({
 }
 
 export default function DashboardPage() {
-  const { active: subActive, plan: subPlan, accessUntil: subUntil } =
-    useSubscription();
+  const { active: subActive, plan: subPlan } = useSubscription();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [pending, setPending] = useState<FeeRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [institute, setInstitute] = useState<Institute | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // If OAuth landed on /?code=… forward to callback (Supabase Site URL fallback)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const qs = new URLSearchParams(window.location.search);
+    if (qs.get("code")) {
+      window.location.replace("/auth/callback" + window.location.search);
+    }
+  }, []);
+
   useEffect(() => {
     async function load() {
-      const [s, p, studs, inst] = await Promise.all([
-        getStats.execute(),
-        manageFees.getPending(),
-        repos.students.getAll(),
-        repos.institute.getCurrent(),
-      ]);
-      setStats(s);
-      setStudents(studs);
-      setInstitute(inst);
-      const feeDayMap = Object.fromEntries(
-        studs.map((st) => [st.id, st.feeStartDay || 1])
-      );
-      setPending(
-        p.sort(
-          (a, b) =>
-            getDaysPending(b.month, feeDayMap[b.studentId] || 1) -
-            getDaysPending(a.month, feeDayMap[a.studentId] || 1)
-        )
-      );
-      setLoading(false);
+      try {
+        const [s, p, studs, inst] = await Promise.all([
+          getStats.execute(),
+          manageFees.getPending(),
+          repos.students.getAll(),
+          repos.institute.getCurrent(),
+        ]);
+        setStats(s);
+        setStudents(studs);
+        setInstitute(inst);
+        const feeDayMap = Object.fromEntries(
+          studs.map((st) => [st.id, st.feeStartDay || 1])
+        );
+        setPending(
+          p.sort(
+            (a, b) =>
+              getDaysPending(b.month, feeDayMap[b.studentId] || 1) -
+              getDaysPending(a.month, feeDayMap[a.studentId] || 1)
+          )
+        );
+      } catch (e) {
+        console.warn("[home] load", e);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);
@@ -134,7 +145,6 @@ export default function DashboardPage() {
             institute={institute}
             subPlan={subPlan}
             subActive={subActive}
-            subUntil={subUntil}
           />
         }
       />
@@ -153,9 +163,7 @@ export default function DashboardPage() {
               </p>
               <p className="text-xs text-amber-800/80 mt-0.5">
                 {formatCurrency(stats.pendingFeesAmount)} pending
-                {overdueCount > 0
-                  ? " · " + overdueCount + " overdue"
-                  : ""}
+                {overdueCount > 0 ? " · " + overdueCount + " overdue" : ""}
               </p>
             </div>
             <ArrowRight size={18} className="text-amber-600 shrink-0" />
