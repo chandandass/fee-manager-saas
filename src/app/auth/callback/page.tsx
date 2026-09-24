@@ -66,12 +66,11 @@ export default function AuthCallbackPage() {
           email.split("@")[0] ||
           "Teacher";
 
-        // ——— Platform owner ———
         if (isPlatformOwner(email)) {
           setMessage("Loading centres…");
-          const res = await fetch(
-            `/api/institutes/mine?email=${encodeURIComponent(email)}&userId=${encodeURIComponent(user.id)}`
-          );
+          const res = await fetch("/api/institutes/mine", {
+            credentials: "include",
+          });
           const json = await res.json();
           const list = (json.institutes || []) as { id: string }[];
 
@@ -84,27 +83,23 @@ export default function AuthCallbackPage() {
             return;
           }
 
-          // Default: first centre (can change from ☰ drawer)
           setActiveInstituteId(list[0].id);
           setMessage("Welcome…");
           router.replace("/");
           return;
         }
 
-        // ——— Tenant ———
+        // Server uses session cookie — only send display name
         const res = await fetch("/api/auth/ensure-institute", {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: user.id,
-            email,
-            name,
-          }),
+          body: JSON.stringify({ name }),
         });
         const json = await res.json();
 
         if (!json.ok || !json.instituteId) {
-          throw new Error(json.reason || "Could not create centre");
+          throw new Error(json.reason || json.error || "Could not create centre");
         }
 
         setActiveInstituteId(json.instituteId);
