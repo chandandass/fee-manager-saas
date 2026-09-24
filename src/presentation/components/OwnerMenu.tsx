@@ -18,6 +18,7 @@ type Inst = {
   phone: string | null;
   plan: string;
   email?: string | null;
+  monthly_price_inr?: number;
 };
 
 export function OwnerMenu() {
@@ -32,6 +33,7 @@ export function OwnerMenu() {
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
   const [teacherEmail, setTeacherEmail] = useState("");
+  const [price, setPrice] = useState("249");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -43,10 +45,7 @@ export function OwnerMenu() {
     if (!user?.isOwner) return;
     setListLoading(true);
     try {
-      // Session cookies only — no email/userId query params
-      const res = await fetch("/api/institutes/mine", {
-        credentials: "include",
-      });
+      const res = await fetch("/api/institutes/mine", { credentials: "include" });
       const json = await res.json();
       setList(json.institutes || []);
     } catch {
@@ -57,9 +56,7 @@ export function OwnerMenu() {
   }, [user]);
 
   useEffect(() => {
-    if (open && user?.isOwner && list === null) {
-      loadList();
-    }
+    if (open && user?.isOwner && list === null) loadList();
   }, [open, user, list, loadList]);
 
   if (loading || !user?.isOwner) return null;
@@ -77,6 +74,7 @@ export function OwnerMenu() {
     setOwnerName("");
     setPhone("");
     setTeacherEmail("");
+    setPrice("249");
     setErr("");
     setFormOpen(true);
   }
@@ -87,6 +85,7 @@ export function OwnerMenu() {
     setOwnerName(inst.owner_name || "");
     setPhone(inst.phone || "");
     setTeacherEmail(inst.email || "");
+    setPrice(String(inst.monthly_price_inr ?? 249));
     setErr("");
     setFormOpen(true);
   }
@@ -95,6 +94,11 @@ export function OwnerMenu() {
     e.preventDefault();
     if (!name.trim()) {
       setErr("Name required");
+      return;
+    }
+    const priceNum = Math.round(Number(price));
+    if (!Number.isFinite(priceNum) || priceNum < 1) {
+      setErr("Price must be at least ₹1");
       return;
     }
     setSaving(true);
@@ -111,6 +115,7 @@ export function OwnerMenu() {
             ownerName,
             phone,
             email: teacherEmail.trim().toLowerCase() || null,
+            monthlyPriceInr: priceNum,
           }),
         });
         const json = await res.json();
@@ -125,13 +130,12 @@ export function OwnerMenu() {
             ownerName,
             phone,
             email: teacherEmail.trim().toLowerCase() || undefined,
+            monthlyPriceInr: priceNum,
           }),
         });
         const json = await res.json();
         if (!json.ok) throw new Error(json.error || "Create failed");
-        if (json.institute?.id) {
-          setActiveInstituteId(json.institute.id);
-        }
+        if (json.institute?.id) setActiveInstituteId(json.institute.id);
       }
       setFormOpen(false);
       setList(null);
@@ -197,6 +201,7 @@ export function OwnerMenu() {
               )}
               {list?.map((inst) => {
                 const selected = inst.id === activeId;
+                const p = inst.monthly_price_inr ?? 249;
                 return (
                   <div
                     key={inst.id}
@@ -221,7 +226,7 @@ export function OwnerMenu() {
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5 truncate">
                         {inst.owner_name}
-                        {inst.plan ? ` · ${inst.plan}` : ""}
+                        {" · ₹"}{p}/mo
                       </p>
                       {inst.email && (
                         <p className="text-[11px] text-slate-400 truncate">
@@ -287,8 +292,21 @@ export function OwnerMenu() {
               value={teacherEmail}
               onChange={(e) => setTeacherEmail(e.target.value)}
             />
-            <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-              When this Gmail signs in, they get this centre automatically.
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Monthly price (₹)
+            </label>
+            <Input
+              type="number"
+              min={1}
+              max={99999}
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="249"
+            />
+            <p className="text-[11px] text-slate-400 mt-1">
+              Default ₹249. Set lower for bargains (e.g. 199).
             </p>
           </div>
           <Input
