@@ -10,6 +10,7 @@ import {
 export { DEMO_INSTITUTE_ID };
 
 function mapRow(row: Record<string, unknown>): Institute {
+  const price = Number(row.monthly_price_inr);
   return {
     id: String(row.id),
     name: String(row.name),
@@ -20,11 +21,12 @@ function mapRow(row: Record<string, unknown>): Institute {
     subscriptionEndsAt: row.subscription_ends_at
       ? String(row.subscription_ends_at)
       : undefined,
+    monthlyPriceInr:
+      Number.isFinite(price) && price >= 1 ? Math.round(price) : 249,
   };
 }
 
 export class SupabaseInstituteRepository implements IInstituteRepository {
-  /** Optional id for server-side calls that pass institute explicitly */
   constructor(private fixedId?: string) {}
 
   private resolveId(): string {
@@ -62,6 +64,9 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
     if (data.trialEndsAt !== undefined) patch.trial_ends_at = data.trialEndsAt;
     if (data.subscriptionEndsAt !== undefined) {
       patch.subscription_ends_at = data.subscriptionEndsAt;
+    }
+    if (data.monthlyPriceInr !== undefined) {
+      patch.monthly_price_inr = data.monthlyPriceInr;
     }
     if (data.plan === "basic" || data.plan === "pro") {
       patch.trial_ends_at = null;

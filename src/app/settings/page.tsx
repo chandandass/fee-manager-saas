@@ -80,6 +80,8 @@ function SettingsContent() {
     }
   }, [params, refreshSub]);
 
+  const price = institute?.monthlyPriceInr ?? 249;
+
   const isBasic =
     (institute?.plan === "basic" || institute?.plan === "pro") &&
     institute.subscriptionEndsAt &&
@@ -105,11 +107,9 @@ function SettingsContent() {
     try {
       const res = await fetch("/api/payments/payu/initiate", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          firstname: institute.ownerName,
-          phone: institute.phone,
-          email: user?.email || "owner@example.com",
           instituteId: institute.id,
         }),
       });
@@ -163,7 +163,8 @@ function SettingsContent() {
 
       {user && (
         <p className="text-xs text-slate-500 -mt-2">
-          Signed in as <span className="font-medium text-slate-700">{user.email}</span>
+          Signed in as{" "}
+          <span className="font-medium text-slate-700">{user.email}</span>
         </p>
       )}
 
@@ -189,20 +190,24 @@ function SettingsContent() {
             <div className="min-w-0">
               <p className="text-sm font-medium">Current Plan</p>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <Badge variant={isBasic ? "success" : isTrial ? "info" : "danger"}>
+                <Badge
+                  variant={isBasic ? "success" : isTrial ? "info" : "danger"}
+                >
                   {isBasic
                     ? "Basic (Active)"
                     : isTrial
-                    ? "7-Day Trial"
-                    : "Expired"}
+                      ? "7-Day Trial"
+                      : "Expired"}
                 </Badge>
-                <span className="text-xs text-slate-500">₹249/month</span>
+                <span className="text-xs text-slate-500">
+                  ₹{price}/month
+                </span>
               </div>
             </div>
           </div>
           {!isBasic ? (
             <Button size="sm" onClick={startPayU} disabled={paying}>
-              {paying ? "Redirecting…" : "Pay ₹249"}
+              {paying ? "Redirecting…" : `Pay ₹${price}`}
             </Button>
           ) : (
             <Button
@@ -211,7 +216,7 @@ function SettingsContent() {
               onClick={startPayU}
               disabled={paying}
             >
-              {paying ? "Redirecting…" : "Renew"}
+              {paying ? "Redirecting…" : `Renew ₹${price}`}
             </Button>
           )}
         </div>
@@ -243,7 +248,9 @@ function SettingsContent() {
         <div className="flex items-center justify-between p-3.5 bg-white rounded-xl border border-slate-200 opacity-60">
           <div className="flex items-center gap-3">
             <Bell size={18} className="text-slate-500" />
-            <span className="text-sm font-medium">Fee Reminders / Notifications</span>
+            <span className="text-sm font-medium">
+              Fee Reminders / Notifications
+            </span>
           </div>
           <Badge variant="default">Soon</Badge>
         </div>
@@ -253,7 +260,7 @@ function SettingsContent() {
             <span className="text-sm font-medium">Billing via PayU</span>
           </div>
           <Badge variant={isBasic ? "success" : "info"}>
-            {isBasic ? "Active" : "₹249"}
+            {isBasic ? "Active" : `₹${price}`}
           </Badge>
         </div>
       </div>
