@@ -43,9 +43,10 @@ export function OwnerMenu() {
     if (!user?.isOwner) return;
     setListLoading(true);
     try {
-      const res = await fetch(
-        `/api/institutes/mine?email=${encodeURIComponent(user.email)}&userId=${encodeURIComponent(user.id)}`
-      );
+      // Session cookies only — no email/userId query params
+      const res = await fetch("/api/institutes/mine", {
+        credentials: "include",
+      });
       const json = await res.json();
       setList(json.institutes || []);
     } catch {
@@ -102,10 +103,9 @@ export function OwnerMenu() {
       if (editing) {
         const res = await fetch("/api/institutes", {
           method: "PATCH",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            actorEmail: user!.email,
-            actorUserId: user!.id,
             instituteId: editing.id,
             name,
             ownerName,
@@ -118,10 +118,9 @@ export function OwnerMenu() {
       } else {
         const res = await fetch("/api/institutes", {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            actorEmail: user!.email,
-            actorUserId: user!.id,
             name,
             ownerName,
             phone,
@@ -289,8 +288,7 @@ export function OwnerMenu() {
               onChange={(e) => setTeacherEmail(e.target.value)}
             />
             <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-              When this Gmail signs in with Google, they get this centre
-              automatically (after you sell / assign it).
+              When this Gmail signs in, they get this centre automatically.
             </p>
           </div>
           <Input

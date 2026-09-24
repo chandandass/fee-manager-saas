@@ -3,33 +3,27 @@ import {
   getSupabaseAdmin,
   isSupabaseConfigured,
 } from "@/infrastructure/supabase/client";
+import {
+  getVerifiedUser,
+  unauthorized,
+} from "@/infrastructure/supabase/serverAuth";
 
-/**
- * Save centre details after first Google login.
- * If institute row is missing (ensure-institute failed), CREATE it.
- * Otherwise UPDATE by owner_user_id.
- */
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
     return NextResponse.json({ ok: false, error: "Supabase not configured" }, { status: 503 });
   }
 
+  const user = await getVerifiedUser();
+  if (!user) return unauthorized();
+
   try {
     const body = await req.json();
-    const userId = String(body.userId || "");
-    const email = String(body.email || "").trim().toLowerCase();
     const instituteName = String(body.instituteName || "").trim().slice(0, 120);
     const phone = String(body.phone || "")
       .replace(/\D/g, "")
       .slice(-10);
     const ownerName = String(body.ownerName || "").trim().slice(0, 80);
 
-    if (!userId) {
-      return NextResponse.json(
-        { ok: false, error: "Not signed in" },
-        { status: 401 }
-      );
-    }
     if (!instituteName) {
       return NextResponse.json(
         { ok: false, error: "Institute name is required" },
@@ -38,23 +32,14 @@ export async function POST(req: NextRequest) {
     }
 
     const admin = getSupabaseAdmin();
-    const trialEnds = new Date();
-    trialEnds.setDate(trialEnds.getDate() + 7);
+    const userId = user.id;
+    const email = user.email;
 
-    // Find existing centre for this Google user
-    const { data: existing, error: findErr } = await admin
+    const { data: existing } = await admin
       .from("institutes")
       .select("id")
       .eq("owner_user_id", userId)
       .maybeSingle();
-
-    if (findErr) {
-      console.error("[onboarding] find", findErr);
-      return NextResponse.json(
-        { ok: false, error: findErr.message },
-        { status: 500 }
-      );
-    }
 
     if (existing?.id) {
       const patch: Record<string, unknown> = {
@@ -69,18 +54,49 @@ export async function POST(req: NextRequest) {
         .from("institutes")
         .update(patch)
         .eq("id", existing.id)
+        .eq("owner_user_id", userId) // ownership guard
         .select("id, name, phone, owner_name")
         .single();
 
       if (error) {
-        console.error("[onboarding] update", error);
         return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
       }
-
       return NextResponse.json({ ok: true, institute: data, created: false });
     }
 
-    // No row yet → create (this fixes "Institute not found for user")
+    // Also try email-matched centre (admin pre-created)
+    if (email) {
+      const { data: all } = await admin
+        .from("institutes")
+        .select("id, email")
+        .not("email", "is", null);
+      const byEmail = (all || []).find(
+        (r) => String(r.email || "").toLowerCase().trim() === email
+      );
+      if (byEmail) {
+        const { data, error } = await admin
+          .from("institutes")
+          .update({
+            name: instituteName,
+            owner_name: ownerName || instituteName,
+            phone: phone || "",
+            owner_user_id: userId,
+            email,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", byEmail.id)
+          .select("id, name, phone, owner_name")
+          .single();
+        if (error) {
+          return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+        }
+        return NextResponse.json({ ok: true, institute: data, created: false });
+      }
+    }
+
+    const trialEnds = new Date();
+    trialEnds.setDate(trialEnds.getDate() + 7);
+
     const { data, error } = await admin
       .from("institutes")
       .insert({
@@ -96,18 +112,6 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) {
-      console.error("[onboarding] insert", error);
-      // Common: missing owner_user_id column
-      if (error.message?.includes("owner_user_id")) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error:
-              "DB missing owner_user_id. Run supabase/auth_migration.sql in SQL Editor.",
-          },
-          { status: 500 }
-        );
-      }
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
 

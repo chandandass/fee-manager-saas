@@ -3,27 +3,34 @@ import {
   getSupabaseAdmin,
   isSupabaseConfigured,
 } from "@/infrastructure/supabase/client";
-import { isPlatformOwner } from "@/lib/platform";
+import {
+  getVerifiedUser,
+  unauthorized,
+  forbidden,
+  canAccessInstitute,
+} from "@/infrastructure/supabase/serverAuth";
 
-/** Create institute — platform owner can attach teacher email for later claim */
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
     return NextResponse.json({ ok: false }, { status: 503 });
   }
 
+  const user = await getVerifiedUser();
+  if (!user) return unauthorized();
+
+  // Only platform owner creates centres for others
+  if (!user.isOwner) {
+    return forbidden("Only platform owner can create centres here");
+  }
+
   try {
     const body = await req.json();
-    const actorEmail = String(body.actorEmail || "").toLowerCase();
-    const actorUserId = String(body.actorUserId || "");
     const name = String(body.name || "").trim().slice(0, 120);
     const ownerName = String(body.ownerName || "").trim().slice(0, 80);
     const phone = String(body.phone || "").replace(/\D/g, "").slice(-10);
     const teacherEmail = String(body.email || body.teacherEmail || "")
       .trim()
       .toLowerCase();
-    const ownerUserId = body.ownerUserId
-      ? String(body.ownerUserId)
-      : actorUserId;
 
     if (!name) {
       return NextResponse.json(
@@ -32,33 +39,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const owner = isPlatformOwner(actorEmail);
-    if (!owner && ownerUserId !== actorUserId) {
-      return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-    }
-
-    // Only platform owner can pre-assign a teacher email without linking user yet
-    if (teacherEmail && !owner) {
-      return NextResponse.json(
-        { ok: false, error: "Only platform owner can set teacher email" },
-        { status: 403 }
-      );
-    }
-
     const admin = getSupabaseAdmin();
 
     if (teacherEmail) {
-      const { data: taken } = await admin
+      const { data: all } = await admin
         .from("institutes")
-        .select("id, name")
-        .eq("email", teacherEmail)
-        .maybeSingle();
+        .select("id, name, email")
+        .not("email", "is", null);
+      const taken = (all || []).find(
+        (r) => String(r.email || "").toLowerCase().trim() === teacherEmail
+      );
       if (taken) {
         return NextResponse.json(
-          {
-            ok: false,
-            error: `Email already linked to "${taken.name}"`,
-          },
+          { ok: false, error: `Email already linked to "${taken.name}"` },
           { status: 409 }
         );
       }
@@ -67,20 +60,17 @@ export async function POST(req: NextRequest) {
     const trialEnds = new Date();
     trialEnds.setDate(trialEnds.getDate() + 7);
 
-    const insert: Record<string, unknown> = {
-      name,
-      owner_name: ownerName || name,
-      phone: phone || "",
-      plan: "trial",
-      trial_ends_at: trialEnds.toISOString(),
-      // Owner-created for a teacher: leave owner_user_id null until they sign in
-      owner_user_id: teacherEmail ? null : ownerUserId || null,
-      email: teacherEmail || null,
-    };
-
     const { data, error } = await admin
       .from("institutes")
-      .insert(insert)
+      .insert({
+        name,
+        owner_name: ownerName || name,
+        phone: phone || "",
+        plan: "trial",
+        trial_ends_at: trialEnds.toISOString(),
+        owner_user_id: null, // teacher claims on login
+        email: teacherEmail || null,
+      })
       .select("id, name, owner_name, phone, plan, email")
       .single();
 
@@ -100,29 +90,28 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 503 });
   }
 
+  const user = await getVerifiedUser();
+  if (!user) return unauthorized();
+
   try {
     const body = await req.json();
-    const actorEmail = String(body.actorEmail || "").toLowerCase();
-    const actorUserId = String(body.actorUserId || "");
     const instituteId = String(body.instituteId || "");
     if (!instituteId) {
       return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });
     }
 
-    const admin = getSupabaseAdmin();
-    const owner = isPlatformOwner(actorEmail);
+    const allowed = await canAccessInstitute(user, instituteId);
+    if (!allowed) return forbidden();
 
-    if (!owner) {
-      const { data: row } = await admin
-        .from("institutes")
-        .select("owner_user_id")
-        .eq("id", instituteId)
-        .maybeSingle();
-      if (!row || row.owner_user_id !== actorUserId) {
-        return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-      }
+    // Teacher email only platform owner
+    if (
+      (body.email !== undefined || body.teacherEmail !== undefined) &&
+      !user.isOwner
+    ) {
+      return forbidden("Only platform owner can set teacher email");
     }
 
+    const admin = getSupabaseAdmin();
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
@@ -131,16 +120,11 @@ export async function PATCH(req: NextRequest) {
       patch.owner_name = String(body.ownerName).trim().slice(0, 80);
     if (body.phone !== undefined)
       patch.phone = String(body.phone).replace(/\D/g, "").slice(-10);
-
-    // Only platform owner can change / set teacher email
-    if (body.email !== undefined || body.teacherEmail !== undefined) {
-      if (!owner) {
-        return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
-      }
-      const teacherEmail = String(body.email || body.teacherEmail || "")
-        .trim()
-        .toLowerCase();
-      patch.email = teacherEmail || null;
+    if (user.isOwner && (body.email !== undefined || body.teacherEmail !== undefined)) {
+      patch.email =
+        String(body.email || body.teacherEmail || "")
+          .trim()
+          .toLowerCase() || null;
     }
 
     const { data, error } = await admin

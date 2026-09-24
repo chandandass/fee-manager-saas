@@ -5,9 +5,12 @@ import {
   issueSubscriptionToken,
   type PlanType,
 } from "@/infrastructure/auth/subscriptionToken";
-import { isSupabaseConfigured } from "@/infrastructure/supabase/client";
-import { getSupabaseAdmin } from "@/infrastructure/supabase/client";
+import { isSupabaseConfigured, getSupabaseAdmin } from "@/infrastructure/supabase/client";
 import { instituteIdFromCookieHeader } from "@/infrastructure/supabase/instituteContext";
+import {
+  getVerifiedUser,
+  canAccessInstitute,
+} from "@/infrastructure/supabase/serverAuth";
 
 export async function GET(req: NextRequest) {
   const cookie = req.cookies.get(SUBSCRIPTION_COOKIE)?.value;
@@ -22,18 +25,38 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Prefer institute from cookie (set when user selects centre)
+  const user = await getVerifiedUser();
+  // Not signed in → soft inactive (no data leak)
+  if (!user) {
+    return NextResponse.json({
+      active: false,
+      plan: "expired",
+      accessUntil: null,
+      reason: "no_session",
+    });
+  }
+
   const instituteId =
     instituteIdFromCookieHeader(req.headers.get("cookie")) ||
     req.nextUrl.searchParams.get("instituteId");
 
   if (!instituteId || !isSupabaseConfigured()) {
-    // Soft: no institute selected yet — not an error
     return NextResponse.json({
       active: false,
       plan: "expired",
       accessUntil: null,
       reason: "no_institute",
+    });
+  }
+
+  // Must own / be assigned this centre (or platform owner)
+  const allowed = await canAccessInstitute(user, instituteId);
+  if (!allowed) {
+    return NextResponse.json({
+      active: false,
+      plan: "expired",
+      accessUntil: null,
+      reason: "forbidden",
     });
   }
 

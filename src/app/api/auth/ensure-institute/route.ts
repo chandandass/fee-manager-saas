@@ -3,18 +3,18 @@ import {
   getSupabaseAdmin,
   isSupabaseConfigured,
 } from "@/infrastructure/supabase/client";
-import { isPlatformOwner } from "@/lib/platform";
+import {
+  getVerifiedUser,
+  unauthorized,
+} from "@/infrastructure/supabase/serverAuth";
 
 function isPlaceholderName(name: string | null | undefined): boolean {
   if (!name || !String(name).trim()) return true;
-  const n = String(name).trim();
-  // Only pure auto-generated placeholders, not real centres named "X Tuition"
-  return /^.+'s Tuition$/i.test(n);
+  return /^.+'s Tuition$/i.test(String(name).trim());
 }
 
 /**
- * Teacher email on institutes row = source of truth for assignment.
- * Matching Google email always gets that centre (claim / re-claim).
+ * Session-verified only. Body userId/email ignored for identity.
  */
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
@@ -24,28 +24,30 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const user = await getVerifiedUser();
+  if (!user) return unauthorized();
+
   try {
-    const body = await req.json();
-    const userId = String(body.userId || "");
-    const email = String(body.email || "").toLowerCase().trim();
-    const name = String(body.name || "Teacher").slice(0, 80);
-    if (!userId) {
-      return NextResponse.json(
-        { ok: false, needsOnboarding: true, reason: "no_user" },
-        { status: 400 }
-      );
+    // Optional display name only — never identity
+    let name = "Teacher";
+    try {
+      const body = await req.json();
+      if (body?.name) name = String(body.name).slice(0, 80);
+    } catch {
+      /* no body */
     }
 
+    const userId = user.id;
+    const email = user.email;
     const admin = getSupabaseAdmin();
 
-    // ——— 1) Match teacher email (admin assigned) — FORCE claim ———
-    if (email && !isPlatformOwner(email)) {
+    // 1) Admin-assigned email → claim
+    if (email && !user.isOwner) {
       const { data: rows, error: listErr } = await admin
         .from("institutes")
         .select("id, name, phone, owner_name, email, owner_user_id");
 
       if (listErr) {
-        console.error("[ensure-institute] list", listErr);
         return NextResponse.json({
           ok: false,
           needsOnboarding: true,
@@ -57,18 +59,8 @@ export async function POST(req: NextRequest) {
         (r) => String(r.email || "").toLowerCase().trim() === email
       );
 
-      console.log(
-        "[ensure-institute] lookup",
-        email,
-        "matches",
-        byEmail?.id || null,
-        "name",
-        byEmail?.name || null
-      );
-
       if (byEmail) {
-        // Always attach this Google user to the email-matched centre
-        const { error: claimErr } = await admin
+        await admin
           .from("institutes")
           .update({
             owner_user_id: userId,
@@ -77,33 +69,23 @@ export async function POST(req: NextRequest) {
           })
           .eq("id", byEmail.id);
 
-        if (claimErr) {
-          console.error("[ensure-institute] claim update", claimErr);
-        } else {
-          console.log("[ensure-institute] CLAIMED", byEmail.id, "→", userId);
-        }
-
-        // Real centre name from admin → go Home, no onboarding form
-        const needsOnboarding = isPlaceholderName(byEmail.name);
-
         return NextResponse.json({
           ok: true,
           instituteId: byEmail.id,
           created: false,
           claimed: true,
-          needsOnboarding,
+          needsOnboarding: isPlaceholderName(byEmail.name),
         });
       }
     }
 
-    // ——— 2) Already linked by user id ———
+    // 2) Already owns
     const { data: existingList, error: findErr } = await admin
       .from("institutes")
       .select("id, name, phone, owner_name, email")
       .eq("owner_user_id", userId);
 
     if (findErr) {
-      console.error("[ensure-institute] find", findErr);
       return NextResponse.json({
         ok: false,
         needsOnboarding: true,
@@ -118,12 +100,21 @@ export async function POST(req: NextRequest) {
         instituteId: existing.id,
         created: false,
         claimed: false,
-        needsOnboarding:
-          !isPlatformOwner(email) && isPlaceholderName(existing.name),
+        needsOnboarding: !user.isOwner && isPlaceholderName(existing.name),
       });
     }
 
-    // ——— 3) Self-serve new ———
+    // 3) Self-serve
+    if (user.isOwner) {
+      return NextResponse.json({
+        ok: true,
+        instituteId: null,
+        created: false,
+        needsOnboarding: false,
+        reason: "owner_use_centres_menu",
+      });
+    }
+
     const trialEnds = new Date();
     trialEnds.setDate(trialEnds.getDate() + 7);
 
@@ -142,7 +133,6 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) {
-      console.error("[ensure-institute] insert", error);
       return NextResponse.json({
         ok: false,
         needsOnboarding: true,
@@ -155,7 +145,7 @@ export async function POST(req: NextRequest) {
       instituteId: data.id,
       created: true,
       claimed: false,
-      needsOnboarding: !isPlatformOwner(email),
+      needsOnboarding: true,
     });
   } catch (e) {
     console.error("[ensure-institute]", e);
