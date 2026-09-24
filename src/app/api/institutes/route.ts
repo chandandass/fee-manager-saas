@@ -5,7 +5,7 @@ import {
 } from "@/infrastructure/supabase/client";
 import { isPlatformOwner } from "@/lib/platform";
 
-/** Create institute — platform owner can create for anyone; tenant creates own */
+/** Create institute — platform owner can attach teacher email for later claim */
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
     return NextResponse.json({ ok: false }, { status: 503 });
@@ -18,6 +18,9 @@ export async function POST(req: NextRequest) {
     const name = String(body.name || "").trim().slice(0, 120);
     const ownerName = String(body.ownerName || "").trim().slice(0, 80);
     const phone = String(body.phone || "").replace(/\D/g, "").slice(-10);
+    const teacherEmail = String(body.email || body.teacherEmail || "")
+      .trim()
+      .toLowerCase();
     const ownerUserId = body.ownerUserId
       ? String(body.ownerUserId)
       : actorUserId;
@@ -34,21 +37,51 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
     }
 
+    // Only platform owner can pre-assign a teacher email without linking user yet
+    if (teacherEmail && !owner) {
+      return NextResponse.json(
+        { ok: false, error: "Only platform owner can set teacher email" },
+        { status: 403 }
+      );
+    }
+
     const admin = getSupabaseAdmin();
+
+    if (teacherEmail) {
+      const { data: taken } = await admin
+        .from("institutes")
+        .select("id, name")
+        .eq("email", teacherEmail)
+        .maybeSingle();
+      if (taken) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: `Email already linked to "${taken.name}"`,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const trialEnds = new Date();
     trialEnds.setDate(trialEnds.getDate() + 7);
 
+    const insert: Record<string, unknown> = {
+      name,
+      owner_name: ownerName || name,
+      phone: phone || "",
+      plan: "trial",
+      trial_ends_at: trialEnds.toISOString(),
+      // Owner-created for a teacher: leave owner_user_id null until they sign in
+      owner_user_id: teacherEmail ? null : ownerUserId || null,
+      email: teacherEmail || null,
+    };
+
     const { data, error } = await admin
       .from("institutes")
-      .insert({
-        name,
-        owner_name: ownerName || name,
-        phone: phone || "",
-        plan: "trial",
-        trial_ends_at: trialEnds.toISOString(),
-        owner_user_id: ownerUserId || null,
-      })
-      .select("id, name, owner_name, phone, plan")
+      .insert(insert)
+      .select("id, name, owner_name, phone, plan, email")
       .single();
 
     if (error) {
@@ -62,7 +95,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** Update institute — owner: any; tenant: only own */
 export async function PATCH(req: NextRequest) {
   if (!isSupabaseConfigured()) {
     return NextResponse.json({ ok: false }, { status: 503 });
@@ -100,11 +132,22 @@ export async function PATCH(req: NextRequest) {
     if (body.phone !== undefined)
       patch.phone = String(body.phone).replace(/\D/g, "").slice(-10);
 
+    // Only platform owner can change / set teacher email
+    if (body.email !== undefined || body.teacherEmail !== undefined) {
+      if (!owner) {
+        return NextResponse.json({ ok: false, error: "Forbidden" }, { status: 403 });
+      }
+      const teacherEmail = String(body.email || body.teacherEmail || "")
+        .trim()
+        .toLowerCase();
+      patch.email = teacherEmail || null;
+    }
+
     const { data, error } = await admin
       .from("institutes")
       .update(patch)
       .eq("id", instituteId)
-      .select("id, name, owner_name, phone, plan")
+      .select("id, name, owner_name, phone, plan, email")
       .single();
 
     if (error) {

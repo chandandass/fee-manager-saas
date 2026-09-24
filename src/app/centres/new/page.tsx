@@ -11,7 +11,6 @@ import { isPlatformOwner } from "@/lib/platform";
 import { logoutUser } from "@/lib/logout";
 import { Button, Input } from "@/presentation/components/ui";
 
-/** Platform owner: create first coaching centre when none exist */
 export default function NewCentrePage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -19,6 +18,7 @@ export default function NewCentrePage() {
   const [name, setName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
+  const [teacherEmail, setTeacherEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -65,6 +65,7 @@ export default function NewCentrePage() {
           name: name.trim(),
           ownerName: ownerName.trim() || name.trim(),
           phone,
+          email: teacherEmail.trim().toLowerCase() || undefined,
         }),
       });
       const json = await res.json();
@@ -95,7 +96,7 @@ export default function NewCentrePage() {
         <div className="text-center space-y-1">
           <h1 className="text-xl font-bold text-slate-900">Create coaching centre</h1>
           <p className="text-sm text-slate-500">
-            No centres on the platform yet. Add the first one.
+            Optionally set the teacher&apos;s Gmail so they get this centre on login.
           </p>
         </div>
 
@@ -117,23 +118,35 @@ export default function NewCentrePage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Owner name
+              Owner / teacher name
             </label>
             <Input
               value={ownerName}
               onChange={(e) => setOwnerName(e.target.value)}
-              placeholder="Teacher / owner name"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Phone <span className="text-slate-400 font-normal">(optional)</span>
+              Teacher Gmail
+            </label>
+            <Input
+              type="email"
+              value={teacherEmail}
+              onChange={(e) => setTeacherEmail(e.target.value)}
+              placeholder="teacher@gmail.com"
+            />
+            <p className="text-xs text-slate-400 mt-1">
+              When they sign in with this Google account, they open this centre.
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">
+              Phone (optional)
             </label>
             <Input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               inputMode="tel"
-              placeholder="10-digit mobile"
             />
           </div>
           {error && <p className="text-xs text-red-600">{error}</p>}

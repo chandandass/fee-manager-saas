@@ -17,6 +17,7 @@ type Inst = {
   owner_name: string;
   phone: string | null;
   plan: string;
+  email?: string | null;
 };
 
 export function OwnerMenu() {
@@ -30,11 +31,12 @@ export function OwnerMenu() {
   const [name, setName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
+  const [teacherEmail, setTeacherEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    setActiveId(getActiveInstituteId());
+    setActiveId(getActiveInstituteId() || "");
   }, [open]);
 
   const loadList = useCallback(async () => {
@@ -73,6 +75,7 @@ export function OwnerMenu() {
     setName("");
     setOwnerName("");
     setPhone("");
+    setTeacherEmail("");
     setErr("");
     setFormOpen(true);
   }
@@ -82,6 +85,7 @@ export function OwnerMenu() {
     setName(inst.name);
     setOwnerName(inst.owner_name || "");
     setPhone(inst.phone || "");
+    setTeacherEmail(inst.email || "");
     setErr("");
     setFormOpen(true);
   }
@@ -106,6 +110,7 @@ export function OwnerMenu() {
             name,
             ownerName,
             phone,
+            email: teacherEmail.trim().toLowerCase() || null,
           }),
         });
         const json = await res.json();
@@ -120,6 +125,7 @@ export function OwnerMenu() {
             name,
             ownerName,
             phone,
+            email: teacherEmail.trim().toLowerCase() || undefined,
           }),
         });
         const json = await res.json();
@@ -218,6 +224,11 @@ export function OwnerMenu() {
                         {inst.owner_name}
                         {inst.plan ? ` · ${inst.plan}` : ""}
                       </p>
+                      {inst.email && (
+                        <p className="text-[11px] text-slate-400 truncate">
+                          {inst.email}
+                        </p>
+                      )}
                     </button>
                     <button
                       type="button"
@@ -266,10 +277,22 @@ export function OwnerMenu() {
             required
           />
           <Input
-            placeholder="Owner name"
+            placeholder="Owner / teacher name"
             value={ownerName}
             onChange={(e) => setOwnerName(e.target.value)}
           />
+          <div>
+            <Input
+              placeholder="Teacher Gmail (for login access)"
+              type="email"
+              value={teacherEmail}
+              onChange={(e) => setTeacherEmail(e.target.value)}
+            />
+            <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+              When this Gmail signs in with Google, they get this centre
+              automatically (after you sell / assign it).
+            </p>
+          </div>
           <Input
             placeholder="Phone (optional)"
             value={phone}
