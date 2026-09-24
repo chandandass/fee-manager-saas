@@ -10,6 +10,15 @@ import {
   canAccessInstitute,
 } from "@/infrastructure/supabase/serverAuth";
 
+const DEFAULT_PRICE = 249;
+
+function parsePrice(v: unknown): number | null {
+  if (v === undefined || v === null || v === "") return null;
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n < 1 || n > 99999) return null;
+  return n;
+}
+
 export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured()) {
     return NextResponse.json({ ok: false }, { status: 503 });
@@ -17,8 +26,6 @@ export async function POST(req: NextRequest) {
 
   const user = await getVerifiedUser();
   if (!user) return unauthorized();
-
-  // Only platform owner creates centres for others
   if (!user.isOwner) {
     return forbidden("Only platform owner can create centres here");
   }
@@ -31,6 +38,7 @@ export async function POST(req: NextRequest) {
     const teacherEmail = String(body.email || body.teacherEmail || "")
       .trim()
       .toLowerCase();
+    const price = parsePrice(body.monthlyPriceInr) ?? DEFAULT_PRICE;
 
     if (!name) {
       return NextResponse.json(
@@ -68,10 +76,11 @@ export async function POST(req: NextRequest) {
         phone: phone || "",
         plan: "trial",
         trial_ends_at: trialEnds.toISOString(),
-        owner_user_id: null, // teacher claims on login
+        owner_user_id: null,
         email: teacherEmail || null,
+        monthly_price_inr: price,
       })
-      .select("id, name, owner_name, phone, plan, email")
+      .select("id, name, owner_name, phone, plan, email, monthly_price_inr")
       .single();
 
     if (error) {
@@ -103,12 +112,15 @@ export async function PATCH(req: NextRequest) {
     const allowed = await canAccessInstitute(user, instituteId);
     if (!allowed) return forbidden();
 
-    // Teacher email only platform owner
     if (
       (body.email !== undefined || body.teacherEmail !== undefined) &&
       !user.isOwner
     ) {
       return forbidden("Only platform owner can set teacher email");
+    }
+    // Custom price: platform owner only (bargain deals)
+    if (body.monthlyPriceInr !== undefined && !user.isOwner) {
+      return forbidden("Only platform owner can set price");
     }
 
     const admin = getSupabaseAdmin();
@@ -126,12 +138,22 @@ export async function PATCH(req: NextRequest) {
           .trim()
           .toLowerCase() || null;
     }
+    if (user.isOwner && body.monthlyPriceInr !== undefined) {
+      const p = parsePrice(body.monthlyPriceInr);
+      if (p === null) {
+        return NextResponse.json(
+          { ok: false, error: "Invalid price (1–99999)" },
+          { status: 400 }
+        );
+      }
+      patch.monthly_price_inr = p;
+    }
 
     const { data, error } = await admin
       .from("institutes")
       .update(patch)
       .eq("id", instituteId)
-      .select("id, name, owner_name, phone, plan, email")
+      .select("id, name, owner_name, phone, plan, email, monthly_price_inr")
       .single();
 
     if (error) {

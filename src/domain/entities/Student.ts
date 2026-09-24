@@ -1,17 +1,17 @@
 export type FeeStatus = "paid" | "pending" | "partial";
 
-export interface Student {
+export type PlanType = "trial" | "basic" | "pro";
+
+export interface Institute {
   id: string;
   name: string;
+  ownerName: string;
   phone: string;
-  parentPhone?: string;
-  batchId: string;
-  monthlyFee: number;
-  joinedAt: string;
-  /** Day of month when fee is due (1–28). Student joining mid-month uses this cycle. */
-  feeStartDay: number;
-  isActive: boolean;
-  notes?: string;
+  plan: PlanType;
+  trialEndsAt?: string;
+  subscriptionEndsAt?: string;
+  /** INR per month for SaaS subscription. Default 249. */
+  monthlyPriceInr?: number;
 }
 
 export interface Batch {
@@ -25,38 +25,31 @@ export interface Batch {
   isActive: boolean;
 }
 
+export interface Student {
+  id: string;
+  name: string;
+  phone: string;
+  parentPhone?: string;
+  batchId: string;
+  monthlyFee: number;
+  joinedAt: string;
+  feeStartDay: number;
+  isActive: boolean;
+  notes?: string;
+}
+
 export interface FeeRecord {
   id: string;
   studentId: string;
   studentName: string;
   batchId: string;
-  month: string; // YYYY-MM
+  month: string;
   amount: number;
   paidAmount: number;
   status: FeeStatus;
   paidAt?: string;
   notes?: string;
-  /** ISO date — hide from default pending until this day */
   snoozedUntil?: string;
-}
-
-export interface AttendanceRecord {
-  id: string;
-  studentId: string;
-  batchId: string;
-  date: string;
-  present: boolean;
-}
-
-export interface Institute {
-  id: string;
-  name: string;
-  ownerName: string;
-  phone: string;
-  address?: string;
-  plan: "trial" | "basic" | "pro";
-  trialEndsAt?: string;
-  subscriptionEndsAt?: string;
 }
 
 export interface DashboardStats {

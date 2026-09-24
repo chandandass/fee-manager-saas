@@ -8,7 +8,6 @@ import {
   unauthorized,
 } from "@/infrastructure/supabase/serverAuth";
 
-/** Session-only — ignores query email/userId for identity */
 export async function GET() {
   if (!isSupabaseConfigured()) {
     return NextResponse.json({ institutes: [], role: "none" });
@@ -18,13 +17,13 @@ export async function GET() {
   if (!user) return unauthorized();
 
   const admin = getSupabaseAdmin();
+  const cols =
+    "id, name, owner_name, phone, plan, trial_ends_at, subscription_ends_at, owner_user_id, email, monthly_price_inr";
 
   if (user.isOwner) {
     const { data, error } = await admin
       .from("institutes")
-      .select(
-        "id, name, owner_name, phone, plan, trial_ends_at, subscription_ends_at, owner_user_id, email"
-      )
+      .select(cols)
       .order("name");
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -35,12 +34,7 @@ export async function GET() {
     });
   }
 
-  const { data: all, error } = await admin
-    .from("institutes")
-    .select(
-      "id, name, owner_name, phone, plan, trial_ends_at, subscription_ends_at, owner_user_id, email"
-    )
-    .order("name");
+  const { data: all, error } = await admin.from("institutes").select(cols).order("name");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -48,10 +42,7 @@ export async function GET() {
 
   const institutes = (all || []).filter((row) => {
     if (row.owner_user_id === user.id) return true;
-    if (
-      row.email &&
-      String(row.email).toLowerCase().trim() === user.email
-    ) {
+    if (row.email && String(row.email).toLowerCase().trim() === user.email) {
       return true;
     }
     return false;
