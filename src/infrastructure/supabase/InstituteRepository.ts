@@ -125,6 +125,10 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
   }
 }
 
+/**
+ * Activate plan after verified PayU success.
+ * Idempotent: same txnid never extends subscription twice.
+ */
 export async function activateInstitutePlan(params: {
   txnid: string;
   mihpayid?: string;
@@ -132,16 +136,105 @@ export async function activateInstitutePlan(params: {
   status?: string;
   days?: number;
   instituteId?: string;
-}) {
+  source?: "redirect" | "webhook";
+  expectedAmountInr?: number;
+  raw?: Record<string, unknown>;
+}): Promise<{ accessUntil: Date; instituteId: string; duplicate: boolean }> {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase not configured");
   }
   const sb = getSupabaseAdmin();
+  const txnid = String(params.txnid || "").trim();
+  if (!txnid) throw new Error("txnid required");
+
+  const id = params.instituteId;
+  if (!id) throw new Error("instituteId required");
+
+  // Already processed this txn?
+  const { data: existing } = await sb
+    .from("payment_events")
+    .select("id, status, institute_id")
+    .eq("txnid", txnid)
+    .maybeSingle();
+
+  if (existing && String(existing.status).toLowerCase() === "success") {
+    const { data: inst } = await sb
+      .from("institutes")
+      .select("subscription_ends_at")
+      .eq("id", existing.institute_id || id)
+      .maybeSingle();
+
+    const ends = inst?.subscription_ends_at
+      ? new Date(inst.subscription_ends_at)
+      : new Date();
+
+    console.log("[payu] duplicate txn ignored", txnid);
+    return {
+      accessUntil: ends,
+      instituteId: String(existing.institute_id || id),
+      duplicate: true,
+    };
+  }
+
+  // Optional amount check vs institute price
+  if (params.expectedAmountInr != null && params.amount) {
+    const paid = Math.round(Number(params.amount));
+    const expected = Math.round(params.expectedAmountInr);
+    if (Number.isFinite(paid) && Number.isFinite(expected) && paid !== expected) {
+      await sb.from("payment_events").upsert(
+        {
+          institute_id: id,
+          txnid,
+          mihpayid: params.mihpayid || null,
+          amount: params.amount,
+          status: "amount_mismatch",
+          source: params.source || "redirect",
+          raw: params.raw || null,
+        },
+        { onConflict: "txnid" }
+      );
+      throw new Error(
+        `Amount mismatch: paid ${paid} expected ${expected}`
+      );
+    }
+  }
+
   const days = params.days ?? 30;
   const ends = new Date();
   ends.setDate(ends.getDate() + days);
-  const id = params.instituteId || getActiveInstituteId();
-  if (!id) throw new Error("instituteId required");
+
+  // Record success first (unique txnid) — if conflict, treat as duplicate
+  const { error: insErr } = await sb.from("payment_events").upsert(
+    {
+      institute_id: id,
+      txnid,
+      mihpayid: params.mihpayid || null,
+      amount: params.amount || null,
+      status: params.status || "success",
+      source: params.source || "redirect",
+      raw: params.raw || null,
+    },
+    { onConflict: "txnid" }
+  );
+
+  if (insErr) {
+    // Unique violation → another request won the race
+    if (insErr.code === "23505" || insErr.message?.includes("duplicate")) {
+      const { data: inst } = await sb
+        .from("institutes")
+        .select("subscription_ends_at")
+        .eq("id", id)
+        .maybeSingle();
+      return {
+        accessUntil: inst?.subscription_ends_at
+          ? new Date(inst.subscription_ends_at)
+          : ends,
+        instituteId: id,
+        duplicate: true,
+      };
+    }
+    throw insErr;
+  }
 
   const { error: upErr } = await sb
     .from("institutes")
@@ -155,13 +248,5 @@ export async function activateInstitutePlan(params: {
 
   if (upErr) throw upErr;
 
-  await sb.from("payment_events").insert({
-    institute_id: id,
-    txnid: params.txnid,
-    mihpayid: params.mihpayid || null,
-    amount: params.amount || null,
-    status: params.status || "success",
-  });
-
-  return { accessUntil: ends, instituteId: id };
+  return { accessUntil: ends, instituteId: id, duplicate: false };
 }
