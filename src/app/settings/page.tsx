@@ -44,6 +44,35 @@ function PaymentBanner() {
   return null;
 }
 
+function PayRedirectOverlay({ amount }: { amount: number }) {
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/70 px-6">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl text-center space-y-4">
+        <div className="mx-auto w-12 h-12 rounded-full border-4 border-blue-100 border-t-blue-600 animate-spin" />
+        <div className="space-y-2">
+          <p className="text-base font-semibold text-slate-900">
+            Opening PayU…
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            You will pay <span className="font-semibold">₹{amount}</span> for 1
+            month.
+          </p>
+          <p className="text-sm font-medium text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2.5 leading-relaxed">
+            Payment complete hone tak page / app mat band karein.
+            <br />
+            <span className="font-normal text-amber-900/90">
+              PayU se wapas aane ke baad plan open hoga.
+            </span>
+          </p>
+          <p className="text-xs text-slate-400">
+            Don&apos;t close this screen until you return from payment.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsContent() {
   const params = useSearchParams();
   const { user } = useSessionUser();
@@ -119,6 +148,10 @@ function SettingsContent() {
         setPaying(false);
         return;
       }
+
+      // Brief pause so user can read the warning, then go to PayU
+      await new Promise((r) => setTimeout(r, 900));
+
       const form = document.createElement("form");
       form.method = "POST";
       form.action = data.paymentUrl;
@@ -155,6 +188,8 @@ function SettingsContent() {
 
   return (
     <div className="p-4 space-y-5">
+      {paying && <PayRedirectOverlay amount={price} />}
+
       <PageHeader title="Settings" subtitle="Institute & subscription" />
 
       <Suspense fallback={null}>
@@ -199,15 +234,13 @@ function SettingsContent() {
                       ? "7-Day Trial"
                       : "Expired"}
                 </Badge>
-                <span className="text-xs text-slate-500">
-                  ₹{price}/month
-                </span>
+                <span className="text-xs text-slate-500">₹{price}/month</span>
               </div>
             </div>
           </div>
           {!isBasic ? (
             <Button size="sm" onClick={startPayU} disabled={paying}>
-              {paying ? "Redirecting…" : `Pay ₹${price}`}
+              {paying ? "Opening…" : `Pay ₹${price}`}
             </Button>
           ) : (
             <Button
@@ -216,13 +249,18 @@ function SettingsContent() {
               onClick={startPayU}
               disabled={paying}
             >
-              {paying ? "Redirecting…" : `Renew ₹${price}`}
+              {paying ? "Opening…" : `Renew ₹${price}`}
             </Button>
           )}
         </div>
 
+        <p className="text-xs text-slate-400 mt-3 leading-relaxed">
+          Pay button dabane ke baad PayU khulega. Wapas aane tak app band mat
+          karein.
+        </p>
+
         {isBasic && accessLabel && (
-          <p className="text-xs text-green-700 mt-3">
+          <p className="text-xs text-green-700 mt-2">
             Active until{" "}
             {new Date(accessLabel).toLocaleDateString("en-IN", {
               day: "numeric",
@@ -232,7 +270,7 @@ function SettingsContent() {
           </p>
         )}
         {isTrial && institute.trialEndsAt && (
-          <p className="text-xs text-slate-500 mt-3">
+          <p className="text-xs text-slate-500 mt-2">
             Trial ends:{" "}
             {new Date(institute.trialEndsAt).toLocaleDateString("en-IN", {
               day: "numeric",
@@ -269,7 +307,7 @@ function SettingsContent() {
         variant="danger"
         className="w-full"
         onClick={onLogout}
-        disabled={loggingOut}
+        disabled={loggingOut || paying}
       >
         <LogOut size={16} />
         {loggingOut ? "Signing out…" : "Log out"}
