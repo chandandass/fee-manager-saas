@@ -13,7 +13,7 @@ function isPlaceholderName(name: string | null | undefined): boolean {
 /**
  * Resolve institute for Google user.
  * Priority:
- *  1) Centre pre-created by platform owner with this email (claim)
+ *  1) Centre with matching teacher email (admin assigned) → auto-claim
  *  2) Centre already linked by owner_user_id
  *  3) Create new + onboarding
  */
@@ -39,66 +39,99 @@ export async function POST(req: NextRequest) {
 
     const admin = getSupabaseAdmin();
 
-    // ——— 1) Admin pre-assigned this Gmail ———
+    // ——— 1) Match by teacher email (admin pre-created) ———
     if (email && !isPlatformOwner(email)) {
-      const { data: byEmail, error: emailErr } = await admin
+      // Fetch candidates with email set; match case-insensitive in JS (reliable)
+      const { data: rows, error: emailErr } = await admin
         .from("institutes")
         .select("id, name, phone, owner_name, email, owner_user_id")
-        .ilike("email", email)
-        .maybeSingle();
+        .not("email", "is", null);
 
       if (emailErr) {
-        console.error("[ensure-institute] email lookup", emailErr);
+        console.error("[ensure-institute] email list", emailErr);
+        // Column missing? common if migration not run
+        if (
+          emailErr.message?.includes("owner_user_id") ||
+          emailErr.message?.includes("does not exist")
+        ) {
+          return NextResponse.json({
+            ok: false,
+            needsOnboarding: true,
+            reason:
+              "DB missing columns. Run supabase/auth_migration.sql in SQL Editor.",
+          });
+        }
       }
+
+      const byEmail = (rows || []).find(
+        (r) => String(r.email || "").toLowerCase().trim() === email
+      );
 
       if (byEmail) {
         const free =
           !byEmail.owner_user_id || byEmail.owner_user_id === userId;
 
         if (free) {
-          const { error: claimErr } = await admin
+          const { data: claimed, error: claimErr } = await admin
             .from("institutes")
             .update({
               owner_user_id: userId,
-              email: email, // normalize
+              email,
               owner_name: byEmail.owner_name || name,
               updated_at: new Date().toISOString(),
             })
-            .eq("id", byEmail.id);
+            .eq("id", byEmail.id)
+            .select("id, name")
+            .single();
 
           if (claimErr) {
-            console.error("[ensure-institute] claim", claimErr);
-          } else {
-            // Optional: user also has a leftover self-serve placeholder — ignore it
+            console.error("[ensure-institute] claim failed", claimErr);
+            // Still return this institute id so UI opens it even if update partially failed
             return NextResponse.json({
               ok: true,
               instituteId: byEmail.id,
               created: false,
-              claimed: true,
+              claimed: false,
               needsOnboarding: isPlaceholderName(byEmail.name),
+              warn: claimErr.message,
             });
           }
-        } else {
-          // Email already claimed by someone else
-          console.warn(
-            "[ensure-institute] email already owned",
-            byEmail.owner_user_id
-          );
+
+          console.log("[ensure-institute] CLAIMED", claimed?.id, email);
+          return NextResponse.json({
+            ok: true,
+            instituteId: byEmail.id,
+            created: false,
+            claimed: true,
+            needsOnboarding: isPlaceholderName(byEmail.name),
+          });
         }
+
+        console.warn(
+          "[ensure-institute] email taken by other user",
+          byEmail.owner_user_id
+        );
+      } else {
+        console.log("[ensure-institute] no institute with email", email);
       }
     }
 
     // ——— 2) Already linked by user id ———
-    const { data: existing, error: findErr } = await admin
+    const { data: existingList, error: findErr } = await admin
       .from("institutes")
       .select("id, name, phone, owner_name, email")
-      .eq("owner_user_id", userId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .eq("owner_user_id", userId);
 
     if (findErr) {
       console.error("[ensure-institute] find", findErr);
+      if (findErr.message?.includes("owner_user_id")) {
+        return NextResponse.json({
+          ok: false,
+          needsOnboarding: true,
+          reason:
+            "DB missing owner_user_id. Run supabase/auth_migration.sql",
+        });
+      }
       return NextResponse.json({
         ok: false,
         needsOnboarding: true,
@@ -106,13 +139,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const existing = (existingList || [])[0];
     if (existing) {
-      // Keep email in sync for future admin tools
-      if (email && existing.email !== email) {
-        await admin
-          .from("institutes")
-          .update({ email })
-          .eq("id", existing.id);
+      if (email && String(existing.email || "").toLowerCase() !== email) {
+        await admin.from("institutes").update({ email }).eq("id", existing.id);
       }
 
       return NextResponse.json({
