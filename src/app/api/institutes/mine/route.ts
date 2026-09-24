@@ -5,11 +5,6 @@ import {
 } from "@/infrastructure/supabase/client";
 import { isPlatformOwner } from "@/lib/platform";
 
-/**
- * GET ?email=&userId=
- * - Platform owner → all institutes (one query)
- * - Tenant → only rows where owner_user_id = userId
- */
 export async function GET(req: NextRequest) {
   if (!isSupabaseConfigured()) {
     return NextResponse.json({ institutes: [], role: "none" });
@@ -24,7 +19,9 @@ export async function GET(req: NextRequest) {
   if (owner) {
     const { data, error } = await admin
       .from("institutes")
-      .select("id, name, owner_name, phone, plan, trial_ends_at, subscription_ends_at, owner_user_id, email")
+      .select(
+        "id, name, owner_name, phone, plan, trial_ends_at, subscription_ends_at, owner_user_id, email"
+      )
       .order("name");
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -35,15 +32,27 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  if (!userId) {
+  if (!userId && !email) {
     return NextResponse.json({ role: "tenant", institutes: [] });
   }
 
-  const { data, error } = await admin
+  // Tenant: centres they own OR pre-assigned to their email (not yet claimed)
+  let q = admin
     .from("institutes")
-    .select("id, name, owner_name, phone, plan, trial_ends_at, subscription_ends_at, owner_user_id, email")
-    .eq("owner_user_id", userId)
+    .select(
+      "id, name, owner_name, phone, plan, trial_ends_at, subscription_ends_at, owner_user_id, email"
+    )
     .order("name");
+
+  if (userId && email) {
+    q = q.or(`owner_user_id.eq.${userId},email.ilike.${email}`);
+  } else if (userId) {
+    q = q.eq("owner_user_id", userId);
+  } else {
+    q = q.ilike("email", email);
+  }
+
+  const { data, error } = await q;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
