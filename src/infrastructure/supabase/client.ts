@@ -36,3 +36,11 @@ export function isSupabaseConfigured() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   );
 }
+
+/** Auto-selects getSupabaseBrowser in browser code and getSupabaseAdmin in server-side code. */
+export function getSupabaseClient(): SupabaseClient {
+  if (typeof window !== "undefined") {
+    return getSupabaseBrowser();
+  }
+  return getSupabaseAdmin();
+}

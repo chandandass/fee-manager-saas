@@ -1,6 +1,6 @@
 import { Student } from "@/domain/entities/Student";
 import { IStudentRepository } from "@/domain/repositories/IStudentRepository";
-import { getSupabaseAdmin } from "./client";
+import { getSupabaseClient } from "./client";
 import { requireActiveInstituteId } from "./instituteContext";
 
 function mapStudent(row: Record<string, unknown>): Student {
@@ -20,7 +20,7 @@ function mapStudent(row: Record<string, unknown>): Student {
 
 export class SupabaseStudentRepository implements IStudentRepository {
   async getAll(): Promise<Student[]> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data, error } = await sb
       .from("students")
       .select("*")
@@ -31,14 +31,14 @@ export class SupabaseStudentRepository implements IStudentRepository {
   }
 
   async getById(id: string): Promise<Student | null> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data, error } = await sb.from("students").select("*").eq("id", id).maybeSingle();
     if (error) throw error;
     return data ? mapStudent(data) : null;
   }
 
   async getByBatch(batchId: string): Promise<Student[]> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data, error } = await sb
       .from("students")
       .select("*")
@@ -49,7 +49,7 @@ export class SupabaseStudentRepository implements IStudentRepository {
   }
 
   async create(data: Omit<Student, "id">): Promise<Student> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data: row, error } = await sb
       .from("students")
       .insert({
@@ -71,7 +71,7 @@ export class SupabaseStudentRepository implements IStudentRepository {
   }
 
   async update(id: string, data: Partial<Student>): Promise<Student> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const patch: Record<string, unknown> = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.phone !== undefined) patch.phone = data.phone;
@@ -93,7 +93,7 @@ export class SupabaseStudentRepository implements IStudentRepository {
   }
 
   async delete(id: string): Promise<void> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { error } = await sb.from("students").delete().eq("id", id);
     if (error) throw error;
   }

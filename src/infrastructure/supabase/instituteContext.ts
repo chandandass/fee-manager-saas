@@ -66,9 +66,40 @@ export function clearActiveInstituteId() {
   if (typeof window !== "undefined") {
     try {
       localStorage.removeItem("fm_institute_id");
+      localStorage.removeItem("fm_cached_institute_data");
     } catch {
       /* ignore */
     }
     document.cookie = `${INSTITUTE_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
   }
 }
+
+export const CACHED_INSTITUTE_KEY = "fm_cached_institute_data";
+
+export function getCachedInstitute(): any | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(CACHED_INSTITUTE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.id && parsed.name) {
+      return parsed;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export function setCachedInstitute(inst: any) {
+  if (typeof window === "undefined" || !inst) return;
+  try {
+    localStorage.setItem(CACHED_INSTITUTE_KEY, JSON.stringify(inst));
+    if (inst.id) {
+      setActiveInstituteId(inst.id);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+

@@ -15,8 +15,8 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   return (
     <>
       {!hideNav && (
-        <div className="fixed top-3 right-3 z-40 max-w-lg mx-auto left-0 right-0 flex justify-end pointer-events-none">
-          <div className="pointer-events-auto pr-3">
+        <div className="fixed top-3 right-0 left-0 z-40 max-w-lg mx-auto flex justify-end pointer-events-none px-4">
+          <div className="pointer-events-auto">
             <OwnerMenu />
           </div>
         </div>
@@ -25,7 +25,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         className={
           hideNav
             ? "min-h-screen"
-            : "max-w-lg mx-auto min-h-screen pb-20 relative"
+            : "max-w-lg mx-auto min-h-screen pb-24 pt-1 relative"
         }
       >
         {children}

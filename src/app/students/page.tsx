@@ -15,7 +15,7 @@ import { formatCurrency, dayOfMonthLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageStudents } from "@/domain/use-cases/ManageStudents";
 import { Student, Batch } from "@/domain/entities/Student";
-import { Plus, Search, Phone, MessageCircle, Pencil } from "lucide-react";
+import { Plus, Search, Pencil } from "lucide-react";
 import { useSubscription } from "@/presentation/hooks/useSubscription";
 import {
   BlurLockRow,
@@ -51,13 +51,18 @@ export default function StudentsPage() {
   const [loading, setLoading] = useState(true);
 
   async function load() {
-    const [s, b] = await Promise.all([
-      manageStudents.list(),
-      repos.batches.getAll(),
-    ]);
-    setStudents(s);
-    setBatches(b);
-    setLoading(false);
+    try {
+      const [s, b] = await Promise.all([
+        manageStudents.list().catch(() => []),
+        repos.batches.getAll().catch(() => []),
+      ]);
+      setStudents(s || []);
+      setBatches(b || []);
+    } catch (e) {
+      console.warn("[students] load error", e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -295,9 +300,7 @@ export default function StudentsPage() {
                           }
                           variant="call"
                           title="Call"
-                        >
-                          <Phone size={16} />
-                        </IconButton>
+                        />
                         <IconButton
                           href={
                             "https://wa.me/91" +
@@ -305,9 +308,7 @@ export default function StudentsPage() {
                           }
                           variant="whatsapp"
                           title="WhatsApp"
-                        >
-                          <MessageCircle size={16} />
-                        </IconButton>
+                        />
                       </div>
                     )}
                   </div>

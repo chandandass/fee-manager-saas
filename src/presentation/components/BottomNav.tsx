@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Order: Home · Students · Fees (center) · Batches · More
- * Fees is the core value prop — center position = easiest reach on mobile.
+ * Floating glassmorphic navigation pill container for mobile & desktop shell.
  */
 const items = [
   { href: "/", label: "Home", icon: LayoutDashboard },
@@ -27,8 +27,8 @@ export function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200">
-      <div className="max-w-lg mx-auto flex items-stretch justify-around h-16 px-1">
+    <nav className="fixed bottom-3 left-3 right-3 z-50 max-w-md mx-auto">
+      <div className="glass-nav rounded-2xl shadow-xl shadow-slate-900/10 border border-white/60 p-1.5 flex items-center justify-around backdrop-blur-xl">
         {items.map((item) => {
           const active =
             item.href === "/"
@@ -37,35 +37,58 @@ export function BottomNav() {
           const Icon = item.icon;
           const isPrimary = item.primary;
 
+          if (isPrimary) {
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="relative -mt-6 flex flex-col items-center group focus:outline-none"
+              >
+                <div
+                  className={cn(
+                    "flex items-center justify-center w-13 h-13 rounded-2xl shadow-lg transition-all duration-300 transform group-hover:scale-105 active:scale-95",
+                    active
+                      ? "bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-blue-500/35 ring-4 ring-blue-100"
+                      : "bg-gradient-to-tr from-blue-500 to-indigo-500 text-white shadow-blue-500/25 group-hover:shadow-blue-500/40"
+                  )}
+                >
+                  <Icon size={23} strokeWidth={2.4} />
+                </div>
+                <span
+                  className={cn(
+                    "text-[11px] font-semibold mt-1 transition-colors",
+                    active ? "text-blue-600" : "text-slate-600"
+                  )}
+                >
+                  {item.label}
+                </span>
+              </Link>
+            );
+          }
+
           return (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-1 flex-col items-center justify-center gap-0.5 text-xs font-medium transition-colors relative",
-                active && !isPrimary && "text-blue-600",
-                !active && !isPrimary && "text-slate-400 hover:text-slate-600",
-                active && isPrimary && "text-blue-600",
-                !active && isPrimary && "text-slate-500"
+                "flex flex-1 flex-col items-center justify-center py-1.5 px-2 rounded-xl text-[11px] font-medium transition-all duration-200 relative active:scale-95",
+                active
+                  ? "text-blue-600 font-semibold bg-blue-50/80"
+                  : "text-slate-500 hover:text-slate-800 hover:bg-slate-100/50"
               )}
             >
-              {isPrimary ? (
-                <div
-                  className={cn(
-                    "flex items-center justify-center w-12 h-12 -mt-5 rounded-2xl shadow-md transition-colors",
-                    active
-                      ? "bg-blue-600 text-white shadow-blue-200"
-                      : "bg-blue-50 text-blue-600 border border-blue-100"
-                  )}
-                >
-                  <Icon size={22} strokeWidth={2.2} />
-                </div>
-              ) : (
-                <Icon size={22} strokeWidth={active ? 2.2 : 1.8} />
+              <Icon
+                size={20}
+                strokeWidth={active ? 2.3 : 1.8}
+                className={cn(
+                  "transition-transform duration-200",
+                  active && "scale-110 text-blue-600"
+                )}
+              />
+              <span className="mt-0.5">{item.label}</span>
+              {active && (
+                <span className="absolute bottom-1 w-1 h-1 bg-blue-600 rounded-full" />
               )}
-              <span className={cn(isPrimary && "mt-0.5", isPrimary && active && "font-semibold")}>
-                {item.label}
-              </span>
             </Link>
           );
         })}
@@ -73,3 +96,4 @@ export function BottomNav() {
     </nav>
   );
 }
+

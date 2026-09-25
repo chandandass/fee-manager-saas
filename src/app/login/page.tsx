@@ -92,53 +92,53 @@ function LoginInner() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col justify-center px-6 py-10 bg-slate-50">
-      <div className="max-w-sm mx-auto w-full space-y-8">
-        <div className="text-center space-y-2">
-          <div className="inline-flex w-14 h-14 rounded-2xl bg-blue-600 text-white items-center justify-center text-xl font-bold shadow-lg shadow-blue-600/25">
+    <div className="min-h-screen flex flex-col justify-center px-4 py-10">
+      <div className="max-w-sm mx-auto w-full space-y-6">
+        <div className="text-center space-y-3">
+          <div className="inline-flex w-16 h-16 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white items-center justify-center text-2xl font-bold shadow-xl shadow-blue-500/30 animate-float">
             ₹
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
             FeeManager
           </h1>
-          <p className="text-sm text-slate-500 leading-relaxed">
-            Tuition fee tracking for teachers.
-            <br />
-            Know who paid — remind on WhatsApp.
+          <p className="text-xs font-medium text-slate-500 leading-relaxed max-w-xs mx-auto">
+            Smart tuition fee tracking for teachers & coaching institutes. Know who paid — send WhatsApp reminders in 1 click.
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-          <p className="text-sm font-medium text-slate-800 text-center">
-            Teacher sign in
-          </p>
-          <p className="text-xs text-slate-500 text-center">
-            First time? Use Google — we set up your centre automatically.
-          </p>
+        <div className="glass-card rounded-3xl p-6 space-y-5 border border-white/80 shadow-xl shadow-slate-900/5">
+          <div className="text-center space-y-1">
+            <p className="text-base font-bold text-slate-900">
+              Teacher Sign In
+            </p>
+            <p className="text-xs font-medium text-slate-500">
+              Instant login — your centre is set up automatically.
+            </p>
+          </div>
 
           <button
             type="button"
             onClick={signInWithGoogle}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-sm font-medium text-slate-800 hover:bg-slate-50 active:bg-slate-100 transition disabled:opacity-60 shadow-sm"
+            className="w-full flex items-center justify-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-sm font-semibold text-slate-800 hover:bg-slate-50 active:scale-[0.98] transition-all duration-200 disabled:opacity-60 shadow-sm hover:shadow-md cursor-pointer"
           >
             <GoogleIcon />
-            {loading ? "Opening Google…" : "Continue with Google"}
+            {loading ? "Connecting Google…" : "Continue with Google"}
           </button>
 
           {error && (
-            <p className="text-xs text-red-600 text-center">{error}</p>
+            <p className="text-xs font-medium text-rose-600 text-center bg-rose-50 border border-rose-100 rounded-xl p-2.5">{error}</p>
           )}
 
           {redirectHint && (
             <p className="text-[10px] text-slate-400 text-center break-all leading-relaxed">
-              OAuth return URL: {redirectHint}
+              Callback: {redirectHint}
             </p>
           )}
         </div>
 
-        <p className="text-center text-xs text-slate-400">
-          By continuing you agree to use FeeManager for your coaching centre.
+        <p className="text-center text-xs font-medium text-slate-400">
+          Built for Indian coaching centres & private tutors.
         </p>
       </div>
     </div>

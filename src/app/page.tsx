@@ -8,6 +8,7 @@ import {
   Card,
   Badge,
   IconButton,
+  Button,
 } from "@/presentation/components/ui";
 import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
@@ -20,13 +21,13 @@ import {
   Institute,
 } from "@/domain/entities/Student";
 import {
-  MessageCircle,
-  Phone,
   ArrowRight,
   Users,
   IndianRupee,
   Bell,
   CheckCircle2,
+  BookOpen,
+  Plus,
 } from "lucide-react";
 import { whatsappService } from "@/infrastructure/whatsapp/WhatsAppService";
 import { useSubscription } from "@/presentation/hooks/useSubscription";
@@ -65,6 +66,15 @@ function PlanBadge({
   return <Badge variant="danger">Expired</Badge>;
 }
 
+const DEFAULT_STATS: DashboardStats = {
+  totalStudents: 0,
+  activeBatches: 0,
+  pendingFeesCount: 0,
+  pendingFeesAmount: 0,
+  collectedThisMonth: 0,
+  attendanceToday: 0,
+};
+
 export default function DashboardPage() {
   const { active: subActive, plan: subPlan } = useSubscription();
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -85,27 +95,72 @@ export default function DashboardPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [s, p, studs, inst] = await Promise.all([
-          getStats.execute(),
-          manageFees.getPending(),
-          repos.students.getAll(),
-          repos.institute.getCurrent(),
-        ]);
-        setStats(s);
-        setStudents(studs);
+        let inst = await repos.institute.getCurrent().catch(() => null);
+        if (!inst) {
+          try {
+            const res = await fetch("/api/institutes/mine", { credentials: "include" });
+            if (res.ok) {
+              const json = await res.json();
+              const list = json.institutes || [];
+              if (list.length > 0) {
+                const first = list[0];
+                const { setActiveInstituteId } = await import(
+                  "@/infrastructure/supabase/instituteContext"
+                );
+                setActiveInstituteId(first.id);
+                inst = {
+                  id: first.id,
+                  name: first.name,
+                  ownerName: first.owner_name || "Teacher",
+                  phone: first.phone || "",
+                  plan: first.plan || "trial",
+                  trialEndsAt: first.trial_ends_at,
+                  subscriptionEndsAt: first.subscription_ends_at,
+                  monthlyPriceInr: first.monthly_price_inr || 249,
+                };
+              }
+            }
+          } catch {
+            /* ignore */
+          }
+        }
         setInstitute(inst);
+
+        // getDashboardStats already queries students, batches & fees in one shot.
+        // Only fetch pending fees + students (for phone/feeDay map) separately.
+        const [s, p, studs] = await Promise.all([
+          getStats.execute().catch((err) => {
+            console.warn("[home] getStats error:", err);
+            return DEFAULT_STATS;
+          }),
+          manageFees.getPending().catch(() => []),
+          repos.students.getAll().catch(() => []),
+        ]);
+
+        const combinedStats: DashboardStats = {
+          totalStudents: s?.totalStudents || 0,
+          activeBatches: s?.activeBatches || 0,
+          pendingFeesCount: s?.pendingFeesCount || (p || []).length,
+          pendingFeesAmount: s?.pendingFeesAmount || 0,
+          collectedThisMonth: s?.collectedThisMonth || 0,
+          attendanceToday: 0,
+        };
+
+        setStats(combinedStats);
+        setStudents(studs || []);
         const feeDayMap = Object.fromEntries(
-          studs.map((st) => [st.id, st.feeStartDay || 1])
+          (studs || []).map((st: Student) => [st.id, st.feeStartDay || 1])
         );
         setPending(
-          p.sort(
+          (p || []).sort(
             (a, b) =>
               getDaysPending(b.month, feeDayMap[b.studentId] || 1) -
               getDaysPending(a.month, feeDayMap[a.studentId] || 1)
           )
         );
       } catch (e) {
-        console.warn("[home] load", e);
+        console.warn("[home] load error", e);
+        setStats(DEFAULT_STATS);
       } finally {
         setLoading(false);
       }
@@ -118,28 +173,32 @@ export default function DashboardPage() {
     students.map((s) => [s.id, s.feeStartDay || 1])
   );
 
-  if (loading || !stats) {
+  if (loading) {
     return (
       <div className="p-4 space-y-4 animate-pulse">
-        <div className="h-8 bg-slate-200 rounded w-48" />
-        <div className="h-16 bg-slate-200 rounded-2xl" />
+        <div className="h-8 bg-slate-200/80 rounded-xl w-48" />
+        <div className="h-20 bg-slate-200/80 rounded-2xl" />
         <div className="grid grid-cols-2 gap-3">
-          <div className="h-24 bg-slate-200 rounded-2xl" />
-          <div className="h-24 bg-slate-200 rounded-2xl" />
+          <div className="h-24 bg-slate-200/80 rounded-2xl" />
+          <div className="h-24 bg-slate-200/80 rounded-2xl" />
+          <div className="h-24 bg-slate-200/80 rounded-2xl" />
+          <div className="h-24 bg-slate-200/80 rounded-2xl" />
         </div>
       </div>
     );
   }
+
+  const currentStats = stats || DEFAULT_STATS;
 
   const overdueCount = pending.filter(
     (f) => getDaysPending(f.month, feeDayMap[f.studentId] || 1) > 0
   ).length;
 
   return (
-    <div className="p-4 space-y-5">
+    <div className="p-4 space-y-5 pb-24">
       <PageHeader
-        title="Home"
-        subtitle={institute?.name || "FeeManager"}
+        title="Dashboard"
+        subtitle={institute?.name || "Tuition Fee Manager"}
         action={
           <PlanBadge
             institute={institute}
@@ -151,103 +210,117 @@ export default function DashboardPage() {
 
       {pending.length > 0 ? (
         <Link href="/fees">
-          <div className="flex items-center gap-3 rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3.5 active:bg-amber-100 transition">
-            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
-              <Bell size={18} className="text-amber-700" />
+          <div className="flex items-center gap-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 p-4 hover-lift transition-all group">
+            <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center shrink-0 text-amber-600 animate-pulse-subtle">
+              <Bell size={20} strokeWidth={2.2} />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-amber-950">
+              <p className="text-sm font-bold text-amber-950 flex items-center gap-1.5">
                 {pending.length === 1
-                  ? "1 fee needs attention"
-                  : pending.length + " fees need attention"}
+                  ? "1 fee payment pending"
+                  : `${pending.length} fee payments pending`}
               </p>
-              <p className="text-xs text-amber-800/80 mt-0.5">
-                {formatCurrency(stats.pendingFeesAmount)} pending
-                {overdueCount > 0 ? " · " + overdueCount + " overdue" : ""}
+              <p className="text-xs font-medium text-amber-800/90 mt-0.5">
+                {formatCurrency(currentStats.pendingFeesAmount)} pending
+                {overdueCount > 0 ? ` · ${overdueCount} overdue` : ""}
               </p>
             </div>
-            <ArrowRight size={18} className="text-amber-600 shrink-0" />
+            <div className="w-8 h-8 rounded-full bg-white/80 border border-amber-200 flex items-center justify-center shrink-0 group-hover:translate-x-0.5 transition-transform">
+              <ArrowRight size={16} className="text-amber-700" />
+            </div>
           </div>
         </Link>
       ) : (
-        <div className="flex items-center gap-3 rounded-2xl bg-green-50 border border-green-100 px-4 py-3.5">
-          <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center shrink-0">
-            <CheckCircle2 size={18} className="text-green-700" />
+        <div className="flex items-center gap-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 p-4">
+          <div className="w-11 h-11 rounded-2xl bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center shrink-0 text-emerald-600">
+            <CheckCircle2 size={20} strokeWidth={2.2} />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-green-950">
-              All clear for now
+            <p className="text-sm font-bold text-emerald-950">
+              All payments clear
             </p>
-            <p className="text-xs text-green-800/80 mt-0.5">
-              No fees need attention
+            <p className="text-xs font-medium text-emerald-800/90 mt-0.5">
+              Great work! No fees pending this month.
             </p>
           </div>
         </div>
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <StatCard label="Students" value={stats.totalStudents} accent="blue" />
+        <StatCard
+          label="Total Students"
+          value={currentStats.totalStudents}
+          accent="blue"
+          icon={Users}
+        />
         <StatCard
           label="Pending Fees"
-          value={stats.pendingFeesCount}
-          sub={formatCurrency(stats.pendingFeesAmount)}
+          value={currentStats.pendingFeesCount}
+          sub={formatCurrency(currentStats.pendingFeesAmount)}
           accent="red"
+          icon={Bell}
         />
         <StatCard
           label="Collected"
-          value={formatCurrency(stats.collectedThisMonth)}
+          value={formatCurrency(currentStats.collectedThisMonth)}
           sub="This month"
           accent="green"
+          icon={IndianRupee}
         />
-        <StatCard label="Batches" value={stats.activeBatches} accent="amber" />
+        <StatCard
+          label="Active Batches"
+          value={currentStats.activeBatches}
+          accent="amber"
+          icon={BookOpen}
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <Link href="/students">
-          <Card className="flex items-center gap-3 hover:border-blue-200 transition cursor-pointer">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-              <Users size={20} className="text-blue-600" />
+          <Card className="flex items-center gap-3 hover:border-blue-300 transition-all cursor-pointer group">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <Users size={18} className="text-blue-600" />
             </div>
             <div>
-              <p className="text-sm font-medium">Students</p>
-              <p className="text-xs text-slate-500">Manage</p>
+              <p className="text-sm font-bold text-slate-800">Students</p>
+              <p className="text-[11px] font-medium text-slate-500">Manage & Add</p>
             </div>
           </Card>
         </Link>
         <Link href="/fees">
-          <Card className="flex items-center gap-3 hover:border-green-200 transition cursor-pointer">
-            <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center">
-              <IndianRupee size={20} className="text-green-600" />
+          <Card className="flex items-center gap-3 hover:border-emerald-300 transition-all cursor-pointer group">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center group-hover:scale-105 transition-transform">
+              <IndianRupee size={18} className="text-emerald-600" />
             </div>
             <div>
-              <p className="text-sm font-medium">Fees</p>
-              <p className="text-xs text-slate-500">Track & collect</p>
+              <p className="text-sm font-bold text-slate-800">Collect Fee</p>
+              <p className="text-[11px] font-medium text-slate-500">Track & Remind</p>
             </div>
           </Card>
         </Link>
       </div>
 
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-slate-800">
-            Needs attention
+        <div className="flex items-center justify-between mb-3 px-1">
+          <h2 className="text-sm font-bold text-slate-800 tracking-tight">
+            Pending Fee Reminders
           </h2>
           <Link
             href="/fees"
-            className="text-xs text-blue-600 font-medium flex items-center gap-1"
+            className="text-xs text-blue-600 font-semibold flex items-center gap-1 hover:underline"
           >
-            View all <ArrowRight size={14} />
+            View all <ArrowRight size={13} />
           </Link>
         </div>
 
         {pending.length === 0 ? (
-          <Card>
-            <p className="text-sm text-slate-500 text-center py-4">
-              Nothing pending — great work
+          <Card className="text-center py-6">
+            <p className="text-xs font-medium text-slate-500">
+              🎉 No pending fees right now. Everything is up to date!
             </p>
           </Card>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {pending.slice(0, 5).map((fee) => {
               const dueAmt = fee.amount - fee.paidAmount;
               const days = getDaysPending(
@@ -259,18 +332,18 @@ export default function DashboardPage() {
                 <Card key={fee.id} className="!p-3.5">
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">
+                      <p className="text-sm font-bold text-slate-900 truncate">
                         {fee.studentName}
                       </p>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="text-xs font-medium text-slate-500 mt-0.5">
                         {formatCurrency(dueAmt)}
                         {days > 0 && (
-                          <span className="text-red-600 font-medium">
+                          <span className="text-rose-600 font-semibold">
                             {" · "}{daysPendingLabel(days)}
                           </span>
                         )}
                         {days === 0 && (
-                          <span className="text-slate-400"> · not due yet</span>
+                          <span className="text-slate-400"> · due today</span>
                         )}
                       </p>
                     </div>
@@ -284,9 +357,7 @@ export default function DashboardPage() {
                             }
                             variant="call"
                             title="Call"
-                          >
-                            <Phone size={16} />
-                          </IconButton>
+                          />
                           <IconButton
                             onClick={() =>
                               whatsappService.openReminder({
@@ -299,10 +370,8 @@ export default function DashboardPage() {
                               })
                             }
                             variant="whatsapp"
-                            title="WhatsApp"
-                          >
-                            <MessageCircle size={16} />
-                          </IconButton>
+                            title="Send WhatsApp Reminder"
+                          />
                         </>
                       )}
                     </div>
@@ -316,3 +385,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

@@ -1,6 +1,6 @@
 import { Batch } from "@/domain/entities/Student";
 import { IBatchRepository } from "@/domain/repositories/IBatchRepository";
-import { getSupabaseAdmin } from "./client";
+import { getSupabaseClient } from "./client";
 import { requireActiveInstituteId } from "./instituteContext";
 
 function mapBatch(row: Record<string, unknown>, studentCount = 0): Batch {
@@ -19,30 +19,46 @@ function mapBatch(row: Record<string, unknown>, studentCount = 0): Batch {
 export class SupabaseBatchRepository implements IBatchRepository {
   async getAll(): Promise<Batch[]> {
     const instituteId = requireActiveInstituteId();
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
+    // Single query: batches with nested active student count via PostgREST
     const { data, error } = await sb
       .from("batches")
-      .select("*")
+      .select("*, students!students_batch_id_fkey(id)")
       .eq("institute_id", instituteId)
+      .eq("students.is_active", true)
       .order("name");
-    if (error) throw error;
+    if (error) {
+      // Fallback: if the join fails (e.g. FK name differs), use two queries
+      const { data: batches, error: e2 } = await sb
+        .from("batches")
+        .select("*")
+        .eq("institute_id", instituteId)
+        .order("name");
+      if (e2) throw e2;
 
-    const { data: students } = await sb
-      .from("students")
-      .select("batch_id")
-      .eq("institute_id", instituteId)
-      .eq("is_active", true);
+      const { data: students } = await sb
+        .from("students")
+        .select("batch_id")
+        .eq("institute_id", instituteId)
+        .eq("is_active", true);
 
-    const counts: Record<string, number> = {};
-    for (const s of students || []) {
-      if (s.batch_id) counts[s.batch_id] = (counts[s.batch_id] || 0) + 1;
+      const counts: Record<string, number> = {};
+      for (const s of students || []) {
+        if (s.batch_id) counts[s.batch_id] = (counts[s.batch_id] || 0) + 1;
+      }
+      return (batches || []).map((r) => mapBatch(r, counts[r.id] || 0));
     }
 
-    return (data || []).map((r) => mapBatch(r, counts[r.id] || 0));
+    return (data || []).map((r) => {
+      const count = Array.isArray((r as any).students)
+        ? (r as any).students.length
+        : 0;
+      return mapBatch(r, count);
+    });
   }
 
   async getById(id: string): Promise<Batch | null> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data, error } = await sb.from("batches").select("*").eq("id", id).maybeSingle();
     if (error) throw error;
     if (!data) return null;
@@ -55,7 +71,7 @@ export class SupabaseBatchRepository implements IBatchRepository {
   }
 
   async create(batch: Omit<Batch, "id" | "studentCount">): Promise<Batch> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data, error } = await sb
       .from("batches")
       .insert({
@@ -74,7 +90,7 @@ export class SupabaseBatchRepository implements IBatchRepository {
   }
 
   async update(id: string, data: Partial<Batch>): Promise<Batch> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const patch: Record<string, unknown> = {};
     if (data.name !== undefined) patch.name = data.name;
     if (data.subject !== undefined) patch.subject = data.subject;
@@ -95,7 +111,7 @@ export class SupabaseBatchRepository implements IBatchRepository {
   }
 
   async delete(id: string): Promise<void> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { error } = await sb.from("batches").delete().eq("id", id);
     if (error) throw error;
   }

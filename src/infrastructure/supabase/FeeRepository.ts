@@ -1,6 +1,6 @@
 import { FeeRecord, FeeStatus } from "@/domain/entities/Student";
 import { IFeeRepository } from "@/domain/repositories/IFeeRepository";
-import { getSupabaseAdmin } from "./client";
+import { getSupabaseClient } from "./client";
 import { requireActiveInstituteId } from "./instituteContext";
 
 function mapFee(row: Record<string, unknown>): FeeRecord {
@@ -28,7 +28,7 @@ function isSnoozedActive(fee: FeeRecord): boolean {
 
 export class SupabaseFeeRepository implements IFeeRepository {
   async getAll(month?: string): Promise<FeeRecord[]> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     let q = sb
       .from("fees")
       .select("*")
@@ -40,7 +40,7 @@ export class SupabaseFeeRepository implements IFeeRepository {
   }
 
   async getByStudent(studentId: string): Promise<FeeRecord[]> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data, error } = await sb
       .from("fees")
       .select("*")
@@ -60,7 +60,7 @@ export class SupabaseFeeRepository implements IFeeRepository {
     paidAmount: number,
     paidAt?: string
   ): Promise<FeeRecord> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data: existing, error: gErr } = await sb
       .from("fees")
       .select("*")
@@ -90,7 +90,7 @@ export class SupabaseFeeRepository implements IFeeRepository {
   }
 
   async createMonthlyFees(month: string): Promise<FeeRecord[]> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const instituteId = requireActiveInstituteId();
     const { data: existing } = await sb
       .from("fees")
@@ -129,7 +129,7 @@ export class SupabaseFeeRepository implements IFeeRepository {
     status: FeeStatus,
     paidAmount?: number
   ): Promise<FeeRecord> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const patch: Record<string, unknown> = { status };
     if (paidAmount !== undefined) patch.paid_amount = paidAmount;
     const { data, error } = await sb
@@ -143,7 +143,7 @@ export class SupabaseFeeRepository implements IFeeRepository {
   }
 
   async snooze(id: string, until: string): Promise<FeeRecord> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data, error } = await sb
       .from("fees")
       .update({ snoozed_until: until.slice(0, 10) })
@@ -155,7 +155,7 @@ export class SupabaseFeeRepository implements IFeeRepository {
   }
 
   async clearSnooze(id: string): Promise<FeeRecord> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data, error } = await sb
       .from("fees")
       .update({ snoozed_until: null })

@@ -15,9 +15,8 @@ import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageFees } from "@/domain/use-cases/ManageFees";
 import { FeeRecord, Student } from "@/domain/entities/Student";
+import { getCachedInstitute } from "@/infrastructure/supabase/instituteContext";
 import {
-  MessageCircle,
-  Phone,
   Pencil,
   ChevronDown,
   ChevronUp,
@@ -46,6 +45,7 @@ type StudentGroup = {
 export default function FeesPage() {
   const [fees, setFees] = useState<FeeRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [instituteName, setInstituteName] = useState("Tuition Centre");
   const [filter, setFilter] = useState<"pending" | "snoozed" | "paid" | "all">(
     "pending"
   );
@@ -57,13 +57,22 @@ export default function FeesPage() {
   const [snoozeMenuId, setSnoozeMenuId] = useState<string | null>(null);
 
   async function load() {
-    const [all, studs] = await Promise.all([
-      manageFees.list(),
-      repos.students.getAll(),
-    ]);
-    setFees(all);
-    setStudents(studs);
-    setLoading(false);
+    try {
+      // Load institute name from cache (no extra API call)
+      const cached = getCachedInstitute();
+      if (cached?.name) setInstituteName(cached.name);
+
+      const [all, studs] = await Promise.all([
+        manageFees.list().catch(() => []),
+        repos.students.getAll().catch(() => []),
+      ]);
+      setFees(all || []);
+      setStudents(studs || []);
+    } catch (e) {
+      console.warn("[fees] load error", e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -307,9 +316,7 @@ export default function FeesPage() {
                     href={"tel:+91" + phone.replace(/\D/g, "").slice(-10)}
                     variant="call"
                     title="Call"
-                  >
-                    <Phone size={18} />
-                  </IconButton>
+                  />
                   <IconButton
                     onClick={() =>
                       whatsappService.openReminder({
@@ -317,14 +324,12 @@ export default function FeesPage() {
                         studentName: fee.studentName,
                         amount: due,
                         month: fee.month,
-                        instituteName: "Sharma Tuition Centre",
+                        instituteName,
                       })
                     }
                     variant="whatsapp"
-                    title="WhatsApp"
-                  >
-                    <MessageCircle size={18} />
-                  </IconButton>
+                    title="Send WhatsApp Reminder"
+                  />
                 </>
               )}
 
@@ -478,9 +483,7 @@ export default function FeesPage() {
                     }
                     variant="call"
                     title="Call"
-                  >
-                    <Phone size={18} />
-                  </IconButton>
+                  />
                   <IconButton
                     onClick={() =>
                       whatsappService.openReminder({
@@ -488,14 +491,12 @@ export default function FeesPage() {
                         studentName: group.studentName,
                         amount: group.totalDue,
                         month: group.fees.length + " months",
-                        instituteName: "Sharma Tuition Centre",
+                        instituteName,
                       })
                     }
                     variant="whatsapp"
                     title="WhatsApp total"
-                  >
-                    <MessageCircle size={18} />
-                  </IconButton>
+                  />
                 </>
               )}
               <Button
@@ -773,9 +774,9 @@ export default function FeesPage() {
           }
           description={
             filter === "pending"
-              ? "Sab clear — or check Snoozed if you hid some."
+              ? "All fees are clear! Check the Snoozed tab if you hid any."
               : filter === "snoozed"
-              ? "Snoozed items come back after the date you chose."
+              ? "No snoozed fees. Snoozed items come back after the date you chose."
               : "Fee records will appear once students are added."
           }
         />

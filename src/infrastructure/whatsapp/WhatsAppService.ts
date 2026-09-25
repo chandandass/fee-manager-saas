@@ -16,12 +16,13 @@ export class WhatsAppService {
   buildReminderMessage(payload: ReminderPayload): string {
     const { studentName, amount, month, instituteName } = payload;
     return (
-      `Namaste 🙏\n\n` +
-      `*${instituteName}* se message.\n\n` +
-      `${studentName} ji ke ${month} ke fees pending hain.\n` +
-      `Amount: ₹${amount}\n\n` +
-      `Please jaldi payment kar den.\n` +
-      `Dhanyavaad!`
+      `Hello 🙏\n\n` +
+      `This is a gentle fee reminder from *${instituteName}*.\n\n` +
+      `Student: *${studentName}*\n` +
+      `Month: ${month}\n` +
+      `Amount Due: ₹${amount}\n\n` +
+      `Kindly complete the payment at your earliest convenience.\n\n` +
+      `Thank you!`
     );
   }
 

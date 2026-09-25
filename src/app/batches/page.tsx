@@ -32,9 +32,14 @@ export default function BatchesPage() {
   const [loading, setLoading] = useState(true);
 
   async function load() {
-    const b = await repos.batches.getAll();
-    setBatches(b);
-    setLoading(false);
+    try {
+      const b = await repos.batches.getAll().catch(() => []);
+      setBatches(b || []);
+    } catch (e) {
+      console.warn("[batches] load error", e);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {

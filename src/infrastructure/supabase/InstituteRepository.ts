@@ -1,10 +1,12 @@
 import { Institute, DashboardStats } from "@/domain/entities/Student";
 import { IInstituteRepository } from "@/domain/repositories/IInstituteRepository";
-import { getSupabaseAdmin, isSupabaseConfigured } from "./client";
+import { getSupabaseAdmin, getSupabaseClient, isSupabaseConfigured } from "./client";
 import {
   DEMO_INSTITUTE_ID,
   getActiveInstituteId,
   requireActiveInstituteId,
+  getCachedInstitute,
+  setCachedInstitute,
 } from "./instituteContext";
 
 export { DEMO_INSTITUTE_ID };
@@ -35,11 +37,17 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
   }
 
   async getCurrent(): Promise<Institute> {
+    const cached = getCachedInstitute();
+    if (cached && (!this.fixedId || cached.id === this.fixedId)) {
+      // Return local cached copy instantly (0ms network latency)
+      return cached;
+    }
+
     if (!isSupabaseConfigured()) {
       throw new Error("Supabase not configured");
     }
     const id = this.resolveId();
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const { data, error } = await sb
       .from("institutes")
       .select("*")
@@ -48,11 +56,13 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
 
     if (error) throw error;
     if (!data) throw new Error("Institute not found — complete setup");
-    return mapRow(data);
+    const inst = mapRow(data);
+    setCachedInstitute(inst);
+    return inst;
   }
 
   async update(data: Partial<Institute>): Promise<Institute> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const id = this.resolveId();
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
@@ -80,22 +90,24 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
       .single();
 
     if (error) throw error;
-    return mapRow(row);
+    const inst = mapRow(row);
+    setCachedInstitute(inst);
+    return inst;
   }
 
   async getDashboardStats(): Promise<DashboardStats> {
-    const sb = getSupabaseAdmin();
+    const sb = getSupabaseClient();
     const instituteId = this.resolveId();
 
     const [students, batches, fees] = await Promise.all([
       sb
         .from("students")
-        .select("id", { count: "exact", head: true })
+        .select("id")
         .eq("institute_id", instituteId)
         .eq("is_active", true),
       sb
         .from("batches")
-        .select("id", { count: "exact", head: true })
+        .select("id")
         .eq("institute_id", instituteId)
         .eq("is_active", true),
       sb
@@ -104,6 +116,8 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
         .eq("institute_id", instituteId),
     ]);
 
+    const studentRows = students.data || [];
+    const batchRows = batches.data || [];
     const feeRows = fees.data || [];
     const pending = feeRows.filter((f) => f.status !== "paid");
     const currentMonth = new Date().toISOString().slice(0, 7);
@@ -112,11 +126,11 @@ export class SupabaseInstituteRepository implements IInstituteRepository {
       .reduce((s, f) => s + (f.paid_amount || 0), 0);
 
     return {
-      totalStudents: students.count || 0,
-      activeBatches: batches.count || 0,
+      totalStudents: studentRows.length,
+      activeBatches: batchRows.length,
       pendingFeesCount: pending.length,
       pendingFeesAmount: pending.reduce(
-        (s, f) => s + (f.amount - f.paid_amount),
+        (s, f) => s + (f.amount - (f.paid_amount || 0)),
         0
       ),
       collectedThisMonth: collected,

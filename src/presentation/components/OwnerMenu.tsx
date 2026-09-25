@@ -153,11 +153,11 @@ export function OwnerMenu() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="w-10 h-10 rounded-xl flex items-center justify-center bg-slate-100 text-slate-700 hover:bg-slate-200"
-        title="Centres"
+        className="w-10 h-10 rounded-2xl flex items-center justify-center glass-card text-slate-700 hover:text-slate-900 shadow-md shadow-slate-900/5 hover:scale-105 active:scale-95 transition-all duration-200 border border-white/60"
+        title="Coaching Centres"
         aria-label="Open menu"
       >
-        <Menu size={20} />
+        <Menu size={20} strokeWidth={2.2} />
       </button>
 
       {open && (
