@@ -50,10 +50,11 @@ export class SupabaseStudentRepository implements IStudentRepository {
 
   async create(data: Omit<Student, "id">): Promise<Student> {
     const sb = getSupabaseClient();
+    const instId = requireActiveInstituteId();
     const { data: row, error } = await sb
       .from("students")
       .insert({
-        institute_id: requireActiveInstituteId(),
+        institute_id: instId,
         batch_id: data.batchId || null,
         name: data.name,
         phone: data.phone,
@@ -67,7 +68,17 @@ export class SupabaseStudentRepository implements IStudentRepository {
       .select("*")
       .single();
     if (error) throw error;
-    return mapStudent(row);
+
+    const student = mapStudent(row);
+    try {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const { SupabaseFeeRepository } = await import("./FeeRepository");
+      await new SupabaseFeeRepository().createMonthlyFees(currentMonth);
+    } catch (e) {
+      console.warn("[StudentRepo] Error auto-generating fees for new student:", e);
+    }
+
+    return student;
   }
 
   async update(id: string, data: Partial<Student>): Promise<Student> {

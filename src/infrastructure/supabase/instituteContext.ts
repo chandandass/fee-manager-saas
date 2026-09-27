@@ -103,3 +103,40 @@ export function setCachedInstitute(inst: any) {
   }
 }
 
+export function shouldCheckFeeGen(instituteId: string, month: string): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const key = `fm_fee_gen_${instituteId}_${month}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return true;
+    const parsed = JSON.parse(raw);
+    const today = new Date().toISOString().slice(0, 10);
+    if (parsed.date === today && (parsed.count || 0) >= 3) {
+      return false;
+    }
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
+
+export function recordFeeGenCheck(instituteId: string, month: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const key = `fm_fee_gen_${instituteId}_${month}`;
+    const today = new Date().toISOString().slice(0, 10);
+    const raw = localStorage.getItem(key);
+    let count = 1;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.date === today) {
+        count = (parsed.count || 0) + 1;
+      }
+    }
+    localStorage.setItem(key, JSON.stringify({ date: today, count }));
+  } catch {
+    /* ignore */
+  }
+}
+
+

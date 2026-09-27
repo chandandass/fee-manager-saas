@@ -15,6 +15,9 @@ import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { Batch } from "@/domain/entities/Student";
 import { Plus, Users, Pencil } from "lucide-react";
 
+import { useSubscription } from "@/presentation/hooks/useSubscription";
+import { ExpiredCreateModal } from "@/presentation/components/SubscriptionGate";
+
 const repos = createRepositories();
 
 const emptyForm = {
@@ -25,11 +28,15 @@ const emptyForm = {
 };
 
 export default function BatchesPage() {
+  const { active: planActive, loading: subLoading } = useSubscription();
+  const locked = !subLoading && !planActive;
+
   const [batches, setBatches] = useState<Batch[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Batch | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
+  const [expiredModalOpen, setExpiredModalOpen] = useState(false);
 
   async function load() {
     try {
@@ -47,6 +54,10 @@ export default function BatchesPage() {
   }, []);
 
   function openCreate() {
+    if (locked) {
+      setExpiredModalOpen(true);
+      return;
+    }
     setEditing(null);
     setForm(emptyForm);
     setShowForm(true);
@@ -110,6 +121,13 @@ export default function BatchesPage() {
             Add
           </Button>
         }
+      />
+
+      <ExpiredCreateModal
+        open={expiredModalOpen}
+        onClose={() => setExpiredModalOpen(false)}
+        title="Subscription Expired"
+        description="Please renew your subscription to create new batches."
       />
 
       <Modal

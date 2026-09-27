@@ -47,6 +47,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         const session = data.session;
 
         if (!session?.user) {
+          if (pathname === "/") {
+            if (!cancelled) setReady(true);
+            return;
+          }
           router.replace("/login");
           return;
         }

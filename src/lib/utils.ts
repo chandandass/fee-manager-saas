@@ -53,3 +53,21 @@ export function daysPendingLabel(days: number): string {
   if (months === 1) return "1 month overdue";
   return months + " months overdue";
 }
+
+export function getMonthsBetween(startMonth: string, endMonth: string): string[] {
+  if (!startMonth || startMonth > endMonth) return [endMonth];
+  const months: string[] = [];
+  let current = startMonth;
+
+  while (current <= endMonth) {
+    months.push(current);
+    if (months.length >= 24) break;
+    const [y, m] = current.split("-").map(Number);
+    const nextDate = new Date(y, m, 1);
+    const nextY = nextDate.getFullYear();
+    const nextM = String(nextDate.getMonth() + 1).padStart(2, "0");
+    current = `${nextY}-${nextM}`;
+  }
+  return months;
+}
+

@@ -9,7 +9,7 @@ import {
   Badge,
 } from "@/presentation/components/ui";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
-import { Institute } from "@/domain/entities/Student";
+import { Institute, PlanType } from "@/domain/entities/Student";
 import {
   Building2,
   CreditCard,
@@ -19,6 +19,8 @@ import {
   Pencil,
   ShieldCheck,
   ExternalLink,
+  Mail,
+  MessageCircle,
 } from "lucide-react";
 import { Modal, Input } from "@/presentation/components/ui";
 import { useSubscription } from "@/presentation/hooks/useSubscription";
@@ -134,7 +136,7 @@ function SettingsContent() {
   const [policyOpen, setPolicyOpen] = useState(false);
 
   async function refreshInstitute() {
-    const { getCachedInstitute, setCachedInstitute, setActiveInstituteId } =
+    const { getCachedInstitute, setCachedInstitute, setActiveInstituteId, getActiveInstituteId } =
       await import("@/infrastructure/supabase/instituteContext");
 
     // 1. Instant render from local cache (0ms UI latency)
@@ -149,19 +151,24 @@ function SettingsContent() {
       const res = await fetch("/api/institutes/mine", { credentials: "include" });
       if (res.ok) {
         const json = await res.json();
-        const list = json.institutes || [];
+        const list: Array<Record<string, unknown>> = json.institutes || [];
         if (list.length > 0) {
-          const first = list[0];
-          setActiveInstituteId(first.id);
-          const freshInst = {
-            id: first.id,
-            name: first.name,
-            ownerName: first.owner_name || (user?.email ? user.email.split("@")[0] : "Teacher"),
-            phone: first.phone || "",
-            plan: first.plan || "trial",
-            trialEndsAt: first.trial_ends_at,
-            subscriptionEndsAt: first.subscription_ends_at,
-            monthlyPriceInr: first.monthly_price_inr || 249,
+          // Pick the currently-selected institute, not always the first one
+          const activeId = getActiveInstituteId();
+          const matched = activeId
+            ? list.find((i) => i.id === activeId) ?? list[0]
+            : list[0];
+          const first = matched;
+          setActiveInstituteId(first.id as string);
+          const freshInst: Institute = {
+            id: String(first.id),
+            name: String(first.name),
+            ownerName: String(first.owner_name || (user?.email ? user.email.split("@")[0] : "Teacher")),
+            phone: String(first.phone || ""),
+            plan: (first.plan as PlanType) || "trial",
+            trialEndsAt: first.trial_ends_at ? String(first.trial_ends_at) : undefined,
+            subscriptionEndsAt: first.subscription_ends_at ? String(first.subscription_ends_at) : undefined,
+            monthlyPriceInr: Number(first.monthly_price_inr) || 249,
           };
           setCachedInstitute(freshInst);
           setInstitute(freshInst);
@@ -471,7 +478,7 @@ function SettingsContent() {
                 })}
           </p>
         )}
-        {!isBasic && (
+        {!isBasic && isTrial && (
           <p className="text-xs font-medium text-amber-800 mt-2.5 flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
             Free trial ends{" "}
@@ -486,6 +493,20 @@ function SettingsContent() {
                   month: "short",
                   year: "numeric",
                 })}
+          </p>
+        )}
+        {!isBasic && !isTrial && (
+          <p className="text-xs font-semibold text-rose-700 mt-2.5 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 inline-block animate-pulse" />
+            Plan expired on{" "}
+            {(institute?.subscriptionEndsAt || institute?.trialEndsAt || instData.trialEndsAt)
+              ? new Date(institute?.subscriptionEndsAt || institute?.trialEndsAt || instData.trialEndsAt!).toLocaleDateString("en-IN", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })
+              : "recently"}
+            . Renew now to unlock full features.
           </p>
         )}
         {payError && <p className="text-xs font-semibold text-rose-600 mt-2">{payError}</p>}
@@ -507,6 +528,41 @@ function SettingsContent() {
           </div>
           <ExternalLink size={14} className="text-slate-400" />
         </button>
+
+        <div className="flex items-center justify-between p-3.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <MessageCircle size={17} />
+            </div>
+            <div className="min-w-0 flex-1 pr-2">
+              <p className="text-xs font-semibold text-slate-800">Help & Support</p>
+              <p className="text-[11px] font-medium text-slate-500 truncate">
+                For long-term plans & support, contact on WhatsApp
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <a
+              href="https://wa.me/917364839326?text=Hi%20FeeManager%20Support%2C%20I%20am%20interested%20in%20a%20long-term%20subscription%20or%20need%20help."
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1.5 rounded-lg bg-[#25D366] hover:bg-[#20c05a] text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition active:scale-95"
+              title="Chat on WhatsApp"
+            >
+              <svg viewBox="0 0 32 32" width="13" height="13" fill="currentColor">
+                <path d="M16.004 0h-.008C7.174 0 0 7.176 0 16c0 3.5 1.13 6.742 3.047 9.371L1.052 31.15l5.957-1.91A15.928 15.928 0 0 0 16.004 32C24.828 32 32 24.822 32 16S24.828 0 16.004 0zm9.394 22.617c-.39 1.098-1.934 2.01-3.17 2.275-.844.18-1.946.324-5.654-1.214-4.748-1.97-7.805-6.79-8.04-7.105-.228-.315-1.916-2.552-1.916-4.867 0-2.314 1.214-3.444 1.645-3.882.39-.39.867-.487 1.157-.487.14 0 .267.006.38.012.333.014.502.032.72.56.271.654.932 2.267 1.014 2.432.084.166.167.39.053.617-.105.235-.198.34-.365.53-.166.19-.324.334-.49.539-.151.178-.323.37-.133.703.19.327.847 1.396 1.818 2.261 1.25 1.112 2.295 1.457 2.66 1.608.27.11.592.086.79-.126.252-.275.562-.732.878-1.184.228-.322.516-.36.82-.247.308.105 1.95.92 2.285 1.085.334.166.557.247.638.384.08.136.08.784-.31 1.882z"/>
+              </svg>
+              WhatsApp
+            </a>
+            <a
+              href="mailto:cdas99633@gmail.com?subject=FeeManager%20Support%20%26%20Subscriptions"
+              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition active:scale-95"
+              title="Email Support"
+            >
+              <Mail size={15} />
+            </a>
+          </div>
+        </div>
 
         <div className="flex items-center justify-between p-3.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs opacity-75">
           <div className="flex items-center gap-3">

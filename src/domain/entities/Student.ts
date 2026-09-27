@@ -60,3 +60,12 @@ export interface DashboardStats {
   collectedThisMonth: number;
   attendanceToday: number;
 }
+
+export interface AttendanceRecord {
+  id: string;
+  studentId: string;
+  batchId: string;
+  date: string;
+  present: boolean;
+}
+

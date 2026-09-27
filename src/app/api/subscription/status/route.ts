@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   SUBSCRIPTION_COOKIE,
-  verifySubscriptionToken,
   issueSubscriptionToken,
   type PlanType,
 } from "@/infrastructure/auth/subscriptionToken";
@@ -13,17 +12,9 @@ import {
 } from "@/infrastructure/supabase/serverAuth";
 
 export async function GET(req: NextRequest) {
-  const cookie = req.cookies.get(SUBSCRIPTION_COOKIE)?.value;
-  const verified = verifySubscriptionToken(cookie);
-
-  if (verified.ok) {
-    return NextResponse.json({
-      active: true,
-      plan: verified.claims.plan,
-      accessUntil: verified.claims.accessUntil,
-      source: "token",
-    });
-  }
+  // NOTE: We intentionally do NOT short-circuit on the subscription cookie here.
+  // The cookie can linger after expiry and would cause expired plans to appear active.
+  // Always check the DB for the authoritative subscription state.
 
   const user = await getVerifiedUser();
   // Not signed in → soft inactive (no data leak)
@@ -124,6 +115,6 @@ export async function GET(req: NextRequest) {
     active: false,
     plan: "expired",
     accessUntil: null,
-    reason: verified.reason || "expired",
+    reason: "expired",
   });
 }

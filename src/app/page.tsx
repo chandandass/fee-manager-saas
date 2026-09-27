@@ -8,7 +8,6 @@ import {
   Card,
   Badge,
   IconButton,
-  Button,
 } from "@/presentation/components/ui";
 import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
@@ -27,10 +26,15 @@ import {
   Bell,
   CheckCircle2,
   BookOpen,
-  Plus,
 } from "lucide-react";
 import { whatsappService } from "@/infrastructure/whatsapp/WhatsAppService";
 import { useSubscription } from "@/presentation/hooks/useSubscription";
+import { LandingPage } from "@/presentation/components/LandingPage";
+import {
+  getSupabaseBrowser,
+  isSupabaseConfigured,
+} from "@/infrastructure/supabase/client";
+import { LockedRowsHint } from "@/presentation/components/SubscriptionGate";
 
 const repos = createRepositories();
 const getStats = new GetDashboardStats(repos.institute);
@@ -75,8 +79,56 @@ const DEFAULT_STATS: DashboardStats = {
   attendanceToday: 0,
 };
 
-export default function DashboardPage() {
-  const { active: subActive, plan: subPlan } = useSubscription();
+export default function HomePage() {
+  const [sessionUser, setSessionUser] = useState<unknown | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setSessionUser({ id: "demo" });
+      setCheckingAuth(false);
+      return;
+    }
+    const sb = getSupabaseBrowser();
+    sb.auth.getSession().then(({ data }) => {
+      setSessionUser(data.session?.user || null);
+      setCheckingAuth(false);
+    });
+
+    const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
+      setSessionUser(session?.user || null);
+      setCheckingAuth(false);
+    });
+
+    return () => {
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="animate-pulse space-y-3 text-center">
+          <div className="w-12 h-12 bg-blue-500/20 rounded-2xl mx-auto flex items-center justify-center text-blue-600 font-bold text-xl">
+            ₹
+          </div>
+          <p className="text-xs text-slate-400 font-medium">Loading FeeManager…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!sessionUser) {
+    return <LandingPage />;
+  }
+
+  return <DashboardContent />;
+}
+
+const PREVIEW_COUNT = 2;
+
+function DashboardContent() {
+  const { active: subActive, plan: subPlan, loading: subLoading } = useSubscription();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [pending, setPending] = useState<FeeRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -103,10 +155,14 @@ export default function DashboardPage() {
               const json = await res.json();
               const list = json.institutes || [];
               if (list.length > 0) {
-                const first = list[0];
-                const { setActiveInstituteId } = await import(
+                const { setActiveInstituteId, getActiveInstituteId } = await import(
                   "@/infrastructure/supabase/instituteContext"
                 );
+                // Pick the currently-selected coaching, not always the first
+                const activeId = getActiveInstituteId();
+                const first = activeId
+                  ? (list.find((i: { id: string }) => i.id === activeId) ?? list[0])
+                  : list[0];
                 setActiveInstituteId(first.id);
                 inst = {
                   id: first.id,
@@ -194,6 +250,10 @@ export default function DashboardPage() {
     (f) => getDaysPending(f.month, feeDayMap[f.studentId] || 1) > 0
   ).length;
 
+  // Subscription gate — only show PREVIEW_COUNT items when expired
+  const isLocked = !subLoading && !subActive;
+  const visiblePending = isLocked ? pending.slice(0, PREVIEW_COUNT) : pending.slice(0, 5);
+
   return (
     <div className="p-4 space-y-5 pb-24">
       <PageHeader
@@ -209,7 +269,7 @@ export default function DashboardPage() {
       />
 
       {pending.length > 0 ? (
-        <Link href="/fees">
+        <Link href="/fees" className="block">
           <div className="flex items-center gap-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/80 p-4 hover-lift transition-all group">
             <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center shrink-0 text-amber-600 animate-pulse-subtle">
               <Bell size={20} strokeWidth={2.2} />
@@ -246,7 +306,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-2.5">
         <StatCard
           label="Total Students"
           value={currentStats.totalStudents}
@@ -283,7 +343,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-sm font-bold text-slate-800">Students</p>
-              <p className="text-[11px] font-medium text-slate-500">Manage & Add</p>
+              <p className="text-[11px] font-medium text-slate-500">Manage &amp; Add</p>
             </div>
           </Card>
         </Link>
@@ -294,7 +354,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-sm font-bold text-slate-800">Collect Fee</p>
-              <p className="text-[11px] font-medium text-slate-500">Track & Remind</p>
+              <p className="text-[11px] font-medium text-slate-500">Track &amp; Remind</p>
             </div>
           </Card>
         </Link>
@@ -321,7 +381,7 @@ export default function DashboardPage() {
           </Card>
         ) : (
           <div className="space-y-2.5">
-            {pending.slice(0, 5).map((fee) => {
+            {visiblePending.map((fee) => {
               const dueAmt = fee.amount - fee.paidAmount;
               const days = getDaysPending(
                 fee.month,
@@ -339,11 +399,11 @@ export default function DashboardPage() {
                         {formatCurrency(dueAmt)}
                         {days > 0 && (
                           <span className="text-rose-600 font-semibold">
-                            {" · "}{daysPendingLabel(days)}
+                            {" \u00b7 "}{daysPendingLabel(days)}
                           </span>
                         )}
                         {days === 0 && (
-                          <span className="text-slate-400"> · due today</span>
+                          <span className="text-slate-400"> \u00b7 due today</span>
                         )}
                       </p>
                     </div>
@@ -379,10 +439,15 @@ export default function DashboardPage() {
                 </Card>
               );
             })}
+            <LockedRowsHint
+              show={isLocked && pending.length > PREVIEW_COUNT}
+              totalCount={pending.length}
+              visibleCount={PREVIEW_COUNT}
+              label="fee reminders"
+            />
           </div>
         )}
       </div>
     </div>
   );
 }
-

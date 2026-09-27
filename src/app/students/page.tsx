@@ -21,11 +21,12 @@ import {
   BlurLockRow,
   LockedRowsHint,
   PlanExpiredBanner,
+  ExpiredCreateModal,
 } from "@/presentation/components/SubscriptionGate";
 
 const repos = createRepositories();
 const manageStudents = new ManageStudents(repos.students);
-const PREVIEW_COUNT = 3;
+const PREVIEW_COUNT = 2;
 
 const defaultFeeDay = Math.min(28, new Date().getDate());
 
@@ -49,6 +50,7 @@ export default function StudentsPage() {
   const [editing, setEditing] = useState<Student | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
+  const [expiredModalOpen, setExpiredModalOpen] = useState(false);
 
   async function load() {
     try {
@@ -90,7 +92,10 @@ export default function StudentsPage() {
   }
 
   function openCreate() {
-    if (locked) return;
+    if (locked) {
+      setExpiredModalOpen(true);
+      return;
+    }
     setEditing(null);
     setForm(emptyForm);
     setShowForm(true);
@@ -165,11 +170,18 @@ export default function StudentsPage() {
         title="Students"
         subtitle={students.length + " total"}
         action={
-          <Button size="sm" onClick={openCreate} disabled={locked}>
+          <Button size="sm" onClick={openCreate}>
             <Plus size={16} />
             Add
           </Button>
         }
+      />
+
+      <ExpiredCreateModal
+        open={expiredModalOpen}
+        onClose={() => setExpiredModalOpen(false)}
+        title="Subscription Expired"
+        description="Please renew your subscription to add new students."
       />
 
       <PlanExpiredBanner show={locked} />
@@ -321,7 +333,11 @@ export default function StudentsPage() {
               </BlurLockRow>
             );
           })}
-          <LockedRowsHint show={locked && filtered.length > PREVIEW_COUNT} />
+          <LockedRowsHint
+            show={locked && filtered.length > PREVIEW_COUNT}
+            totalCount={filtered.length}
+            visibleCount={PREVIEW_COUNT}
+          />
         </div>
       )}
     </div>

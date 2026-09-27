@@ -2,6 +2,7 @@ import { FeeRecord, FeeStatus } from "@/domain/entities/Student";
 import { IFeeRepository } from "@/domain/repositories/IFeeRepository";
 import { getSupabaseClient } from "./client";
 import { requireActiveInstituteId } from "./instituteContext";
+import { getMonthsBetween } from "@/lib/utils";
 
 function mapFee(row: Record<string, unknown>): FeeRecord {
   return {
@@ -89,16 +90,9 @@ export class SupabaseFeeRepository implements IFeeRepository {
     return mapFee(data);
   }
 
-  async createMonthlyFees(month: string): Promise<FeeRecord[]> {
+  async createMonthlyFees(targetMonth: string): Promise<FeeRecord[]> {
     const sb = getSupabaseClient();
     const instituteId = requireActiveInstituteId();
-    const { data: existing } = await sb
-      .from("fees")
-      .select("id")
-      .eq("institute_id", instituteId)
-      .eq("month", month)
-      .limit(1);
-    if (existing && existing.length > 0) return this.getAll(month);
 
     const { data: students, error: sErr } = await sb
       .from("students")
@@ -106,22 +100,58 @@ export class SupabaseFeeRepository implements IFeeRepository {
       .eq("institute_id", instituteId)
       .eq("is_active", true);
     if (sErr) throw sErr;
+    if (!students || students.length === 0) return this.getAll();
 
-    const rows = (students || []).map((s) => ({
-      institute_id: instituteId,
-      student_id: s.id,
-      batch_id: s.batch_id,
-      student_name: s.name,
-      month,
-      amount: s.monthly_fee,
-      paid_amount: 0,
-      status: "pending",
-    }));
+    const { data: existingFees } = await sb
+      .from("fees")
+      .select("student_id, month")
+      .eq("institute_id", instituteId);
 
-    if (rows.length === 0) return [];
-    const { data, error } = await sb.from("fees").insert(rows).select("*");
-    if (error) throw error;
-    return (data || []).map(mapFee);
+    const existingKeys = new Set(
+      (existingFees || []).map((f) => `${f.student_id}_${f.month}`)
+    );
+
+    const rowsToInsert: Array<{
+      institute_id: string;
+      student_id: string;
+      batch_id: string | null;
+      student_name: string;
+      month: string;
+      amount: number;
+      paid_amount: number;
+      status: string;
+    }> = [];
+
+    for (const s of students) {
+      const startMonth = s.joined_at
+        ? String(s.joined_at).slice(0, 7)
+        : targetMonth;
+      const months = getMonthsBetween(startMonth, targetMonth);
+
+      for (const m of months) {
+        const key = `${s.id}_${m}`;
+        if (!existingKeys.has(key)) {
+          rowsToInsert.push({
+            institute_id: instituteId,
+            student_id: String(s.id),
+            batch_id: s.batch_id ? String(s.batch_id) : null,
+            student_name: String(s.name),
+            month: m,
+            amount: Number(s.monthly_fee) || 0,
+            paid_amount: 0,
+            status: "pending",
+          });
+          existingKeys.add(key);
+        }
+      }
+    }
+
+    if (rowsToInsert.length > 0) {
+      const { error: iErr } = await sb.from("fees").insert(rowsToInsert);
+      if (iErr) console.error("[FeeRepo] createMonthlyFees insert error:", iErr);
+    }
+
+    return this.getAll();
   }
 
   async updateStatus(

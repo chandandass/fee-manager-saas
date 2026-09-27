@@ -145,21 +145,39 @@ export class InMemoryFeeRepository implements IFeeRepository {
     };
     return fees[idx];
   }
-  async createMonthlyFees(month: string) {
-    const existing = fees.filter((f) => f.month === month);
-    if (existing.length) return existing;
-    const newFees: FeeRecord[] = students.filter((s) => s.isActive).map((s) => ({
-      id: uid(),
-      studentId: s.id,
-      studentName: s.name,
-      batchId: s.batchId,
-      month,
-      amount: s.monthlyFee,
-      paidAmount: 0,
-      status: "pending" as const,
-    }));
-    fees.push(...newFees);
-    return newFees;
+  async createMonthlyFees(targetMonth: string) {
+    const activeStudents = students.filter((s) => s.isActive);
+    const existingKeys = new Set(
+      fees.map((f) => `${f.studentId}_${f.month}`)
+    );
+    const newFees: FeeRecord[] = [];
+    const { getMonthsBetween } = require("@/lib/utils");
+
+    for (const s of activeStudents) {
+      const startMonth = s.joinedAt ? s.joinedAt.slice(0, 7) : targetMonth;
+      const months = getMonthsBetween(startMonth, targetMonth);
+      for (const m of months) {
+        const key = `${s.id}_${m}`;
+        if (!existingKeys.has(key)) {
+          newFees.push({
+            id: uid(),
+            studentId: s.id,
+            studentName: s.name,
+            batchId: s.batchId,
+            month: m,
+            amount: s.monthlyFee,
+            paidAmount: 0,
+            status: "pending" as const,
+          });
+          existingKeys.add(key);
+        }
+      }
+    }
+
+    if (newFees.length > 0) {
+      fees.push(...newFees);
+    }
+    return this.getAll();
   }
   async updateStatus(id: string, status: FeeRecord["status"], paidAmount?: number) {
     const idx = fees.findIndex((f) => f.id === id);

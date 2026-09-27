@@ -52,7 +52,7 @@ export function Button({
       "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 active:scale-[0.98]",
   };
   const sizes = {
-    sm: "px-3 py-1.5 text-xs font-semibold rounded-xl",
+    sm: "px-3 h-9 text-xs font-semibold rounded-xl",
     md: "px-4 py-2.5 text-sm font-semibold rounded-xl",
     lg: "px-5 py-3 text-base font-semibold rounded-2xl",
   };
@@ -196,53 +196,57 @@ export function StatCard({
   const accents = {
     blue: {
       bar: "from-blue-500 to-indigo-600",
-      bg: "bg-blue-50/80 text-blue-600 border-blue-100",
+      bg: "bg-blue-50/90 text-blue-600 border-blue-100/80",
     },
     green: {
       bar: "from-emerald-500 to-teal-600",
-      bg: "bg-emerald-50/80 text-emerald-600 border-emerald-100",
+      bg: "bg-emerald-50/90 text-emerald-600 border-emerald-100/80",
     },
     amber: {
       bar: "from-amber-500 to-orange-600",
-      bg: "bg-amber-50/80 text-amber-600 border-amber-100",
+      bg: "bg-amber-50/90 text-amber-600 border-amber-100/80",
     },
     red: {
       bar: "from-rose-500 to-red-600",
-      bg: "bg-rose-50/80 text-rose-600 border-rose-100",
+      bg: "bg-rose-50/90 text-rose-600 border-rose-100/80",
     },
     purple: {
       bar: "from-purple-500 to-violet-600",
-      bg: "bg-purple-50/80 text-purple-600 border-purple-100",
+      bg: "bg-purple-50/90 text-purple-600 border-purple-100/80",
     },
   };
   const config = accents[accent];
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/80 shadow-xs p-4 hover-lift transition-all">
+    <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/80 shadow-xs p-3.5 hover-lift transition-all">
       <div
         className={cn(
-          "absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b",
+          "absolute top-0 left-0 w-1 h-full bg-gradient-to-b",
           config.bar
         )}
       />
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+      <div className="flex items-start justify-between gap-1.5 pl-1">
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">
             {label}
           </p>
-          <p className="text-2xl font-bold text-slate-900 mt-1 tracking-tight">
+          <p className="text-xl font-bold text-slate-900 mt-0.5 tracking-tight truncate">
             {value}
           </p>
-          {sub && <p className="text-xs font-medium text-slate-500 mt-1">{sub}</p>}
+          {sub && (
+            <p className="text-[11px] font-semibold text-slate-500 mt-0.5 truncate">
+              {sub}
+            </p>
+          )}
         </div>
         {Icon && (
           <div
             className={cn(
-              "w-9 h-9 rounded-xl border flex items-center justify-center shrink-0",
+              "w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 mt-0.5",
               config.bg
             )}
           >
-            <Icon size={18} strokeWidth={2.2} />
+            <Icon size={15} strokeWidth={2.2} />
           </div>
         )}
       </div>
@@ -318,7 +322,7 @@ export function IconButton({
       "bg-blue-500 text-white border border-blue-400/40 hover:bg-blue-600 active:scale-95 shadow-md shadow-blue-500/20",
   };
   const className = cn(
-    "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200",
+    "w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 shrink-0",
     styles[variant]
   );
 

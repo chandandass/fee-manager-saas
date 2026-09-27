@@ -15,7 +15,12 @@ import { formatCurrency, getDaysPending, daysPendingLabel } from "@/lib/utils";
 import { createRepositories } from "@/infrastructure/supabase/InMemoryStore";
 import { ManageFees } from "@/domain/use-cases/ManageFees";
 import { FeeRecord, Student } from "@/domain/entities/Student";
-import { getCachedInstitute } from "@/infrastructure/supabase/instituteContext";
+import {
+  getCachedInstitute,
+  getActiveInstituteId,
+  shouldCheckFeeGen,
+  recordFeeGenCheck,
+} from "@/infrastructure/supabase/instituteContext";
 import {
   Pencil,
   ChevronDown,
@@ -24,6 +29,15 @@ import {
   Clock,
 } from "lucide-react";
 import { whatsappService } from "@/infrastructure/whatsapp/WhatsAppService";
+import { useSubscription } from "@/presentation/hooks/useSubscription";
+import {
+  BlurLockRow,
+  LockedRowsHint,
+  PlanExpiredBanner,
+  ExpiredCreateModal,
+} from "@/presentation/components/SubscriptionGate";
+
+const PREVIEW_COUNT = 2;
 
 const repos = createRepositories();
 const manageFees = new ManageFees(repos.fees);
@@ -43,6 +57,9 @@ type StudentGroup = {
 };
 
 export default function FeesPage() {
+  const { active: planActive, loading: subLoading } = useSubscription();
+  const locked = !subLoading && !planActive;
+
   const [fees, setFees] = useState<FeeRecord[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [instituteName, setInstituteName] = useState("Tuition Centre");
@@ -55,6 +72,7 @@ export default function FeesPage() {
   const [editFee, setEditFee] = useState<FeeRecord | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [snoozeMenuId, setSnoozeMenuId] = useState<string | null>(null);
+  const [expiredModalOpen, setExpiredModalOpen] = useState(false);
 
   async function load() {
     try {
@@ -62,8 +80,22 @@ export default function FeesPage() {
       const cached = getCachedInstitute();
       if (cached?.name) setInstituteName(cached.name);
 
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const instituteId = getActiveInstituteId();
+
+      let feesPromise: Promise<FeeRecord[]>;
+      // Skip fee generation if user subscription is expired!
+      if (instituteId && planActive && shouldCheckFeeGen(instituteId, currentMonth)) {
+        recordFeeGenCheck(instituteId, currentMonth);
+        feesPromise = manageFees
+          .generateMonthly(currentMonth)
+          .catch(() => manageFees.list().catch(() => []));
+      } else {
+        feesPromise = manageFees.list().catch(() => []);
+      }
+
       const [all, studs] = await Promise.all([
-        manageFees.list().catch(() => []),
+        feesPromise,
         repos.students.getAll().catch(() => []),
       ]);
       setFees(all || []);
@@ -77,7 +109,7 @@ export default function FeesPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [planActive]);
 
   const phoneMap = Object.fromEntries(students.map((s) => [s.id, s.phone]));
   const feeDayMap = Object.fromEntries(
@@ -125,6 +157,7 @@ export default function FeesPage() {
     .sort((a, b) => b.maxDays - a.maxDays || b.totalDue - a.totalDue);
 
   async function markFullPaid(fee: FeeRecord) {
+    if (locked) return setExpiredModalOpen(true);
     await manageFees.recordPayment(fee.id, fee.amount);
     setPartialFeeId(null);
     setSnoozeMenuId(null);
@@ -132,6 +165,7 @@ export default function FeesPage() {
   }
 
   function togglePartial(fee: FeeRecord) {
+    if (locked) return setExpiredModalOpen(true);
     if (partialFeeId === fee.id) {
       setPartialFeeId(null);
       setPayAmount("");
@@ -149,12 +183,14 @@ export default function FeesPage() {
   }
 
   function openEdit(fee: FeeRecord) {
+    if (locked) return setExpiredModalOpen(true);
     setEditFee(fee);
     setPayAmount(String(fee.paidAmount));
   }
 
   async function savePartial(fee: FeeRecord, e: React.FormEvent) {
     e.preventDefault();
+    if (locked) return setExpiredModalOpen(true);
     const amount = Number(payAmount);
     if (isNaN(amount) || amount <= 0) return;
     await manageFees.recordPayment(
@@ -167,6 +203,7 @@ export default function FeesPage() {
 
   async function saveEdit(e: React.FormEvent) {
     e.preventDefault();
+    if (locked) return setExpiredModalOpen(true);
     if (!editFee) return;
     const amount = Number(payAmount);
     if (isNaN(amount) || amount < 0) return;
@@ -180,6 +217,7 @@ export default function FeesPage() {
   }
 
   async function doSnooze(fee: FeeRecord, days: number) {
+    if (locked) return setExpiredModalOpen(true);
     await manageFees.snooze(fee.id, days);
     setSnoozeMenuId(null);
     setPartialFeeId(null);
@@ -187,11 +225,13 @@ export default function FeesPage() {
   }
 
   async function unsnooze(fee: FeeRecord) {
+    if (locked) return setExpiredModalOpen(true);
     await manageFees.clearSnooze(fee.id);
     load();
   }
 
   async function snoozeGroup(group: StudentGroup, days: number) {
+    if (locked) return setExpiredModalOpen(true);
     for (const fee of group.fees) {
       if (fee.status !== "paid" && !isSnoozed(fee)) {
         await manageFees.snooze(fee.id, days);
@@ -343,26 +383,26 @@ export default function FeesPage() {
                   Bring back
                 </Button>
               ) : (
-                <div className="flex">
-                  <Button
-                    size="sm"
+                <div className="inline-flex items-center rounded-xl overflow-hidden bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 h-9 shrink-0">
+                  <button
+                    type="button"
                     onClick={() => markFullPaid(fee)}
-                    className="rounded-r-none"
+                    className="h-full px-3 flex items-center gap-1.5 text-xs font-semibold hover:bg-white/10 active:bg-white/20 transition-colors"
                   >
-                    <Check size={15} />
+                    <Check size={14} strokeWidth={2.5} />
                     Paid
-                  </Button>
+                  </button>
+                  <div className="h-4 w-[1px] bg-white/30" />
                   <button
                     type="button"
                     onClick={() => togglePartial(fee)}
                     className={
-                      "px-2.5 rounded-r-xl flex items-center border-l border-blue-500 " +
-                      (showPartial
-                        ? "bg-blue-700 text-white"
-                        : "bg-blue-600 text-white hover:bg-blue-700")
+                      "h-full px-2 flex items-center justify-center hover:bg-white/10 active:bg-white/20 transition-colors " +
+                      (showPartial ? "bg-white/20" : "")
                     }
+                    title="Partial Payment"
                   >
-                    {showPartial ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    {showPartial ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                   </button>
                 </div>
               )}
@@ -608,30 +648,26 @@ export default function FeesPage() {
                           Back
                         </Button>
                       ) : (
-                        <div className="flex">
-                          <Button
-                            size="sm"
+                        <div className="inline-flex items-center rounded-xl overflow-hidden bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 h-9 shrink-0">
+                          <button
+                            type="button"
                             onClick={() => markFullPaid(fee)}
-                            className="rounded-r-none"
+                            className="h-full px-2.5 flex items-center gap-1 text-xs font-semibold hover:bg-white/10 active:bg-white/20 transition-colors"
                           >
-                            <Check size={14} />
+                            <Check size={14} strokeWidth={2.5} />
                             Paid
-                          </Button>
+                          </button>
+                          <div className="h-4 w-[1px] bg-white/30" />
                           <button
                             type="button"
                             onClick={() => togglePartial(fee)}
                             className={
-                              "px-2 rounded-r-xl flex items-center border-l border-blue-500 " +
-                              (showPartial
-                                ? "bg-blue-700 text-white"
-                                : "bg-blue-600 text-white")
+                              "h-full px-1.5 flex items-center justify-center hover:bg-white/10 active:bg-white/20 transition-colors " +
+                              (showPartial ? "bg-white/20" : "")
                             }
+                            title="Partial Payment"
                           >
-                            {showPartial ? (
-                              <ChevronUp size={14} />
-                            ) : (
-                              <ChevronDown size={14} />
-                            )}
+                            {showPartial ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                           </button>
                         </div>
                       )}
@@ -686,6 +722,8 @@ export default function FeesPage() {
             : "All clear"
         }
       />
+
+      <PlanExpiredBanner show={locked} />
 
       <div className="flex gap-2 overflow-x-auto pb-1">
         {(
@@ -782,13 +820,31 @@ export default function FeesPage() {
         />
       ) : (
         <div className="space-y-3">
-          {groups.map((group) =>
-            group.fees.length === 1
-              ? renderSingleCard(group.fees[0])
-              : renderMultiCard(group)
-          )}
+          {groups.map((group, idx) => {
+            const isRowLocked = locked && idx >= PREVIEW_COUNT;
+            return (
+              <BlurLockRow key={group.studentId} locked={isRowLocked}>
+                {group.fees.length === 1
+                  ? renderSingleCard(group.fees[0])
+                  : renderMultiCard(group)}
+              </BlurLockRow>
+            );
+          })}
+
+          <LockedRowsHint
+            show={locked && groups.length > PREVIEW_COUNT}
+            totalCount={groups.length}
+            visibleCount={PREVIEW_COUNT}
+            label="fee records"
+          />
         </div>
       )}
+
+      <ExpiredCreateModal
+        open={expiredModalOpen}
+        onClose={() => setExpiredModalOpen(false)}
+        description="Please renew your subscription to edit fee records or mark payments."
+      />
     </div>
   );
 }
